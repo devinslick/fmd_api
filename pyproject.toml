@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fmd_api"
+version = "0.1.0"
+authors = [
+    {name = "Devin Slick", email = "fmd_client_github@devinslick.com"},
+]
+description = "A Python client for the FMD server API"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Monitoring",
+]
+keywords = ["fmd", "find-my-device", "location", "tracking", "device-tracking", "api-client"]
+dependencies = [
+    "requests",
+    "argon2-cffi",
+    "cryptography",
+    "aiohttp",
+]
+
+[project.urls]
+Homepage = "https://github.com/devinslick/fmd_api"
+Repository = "https://github.com/devinslick/fmd_api"
+Issues = "https://github.com/devinslick/fmd_api/issues"
+Documentation = "https://github.com/devinslick/fmd_api#readme"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio",
+    "black",
+    "flake8",
+    "mypy",
+]
+
+[tool.setuptools]
+py-modules = ["fmd_api"]
+
+[tool.black]
+line-length = 120
+target-version = ['py37', 'py38', 'py39', 'py310', 'py311']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+asyncio_mode = "auto"

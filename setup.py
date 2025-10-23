@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="fmd-api-client",
+    name="fmd_api",
     version="0.1.0",
     author="Devin Slick",
     author_email="fmd_client_github@devinslick.com",
