@@ -38,6 +38,8 @@ jobs:
     name: Publish to PyPI
     needs: [build_sdist_and_wheel] # Ensure the build job succeeds first
     runs-on: ubuntu-latest
+    # Only publish to PyPI for full releases (not pre-releases)
+    if: github.event.release.prerelease == false
     
     # 2. Use the environment name you configured in PyPI (Optional, but recommended)
     environment: pypi 
