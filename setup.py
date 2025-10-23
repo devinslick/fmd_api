@@ -4,11 +4,11 @@ setup(
     name="fmd_api",
     version="0.1.0",
     author="Devin Slick",
-    author_email="fmd_client_github@devinslick.com",
+    author_email="fmd_api_github@devinslick.com",
     description="A python client for the FMD server API.",
     long_description=open('README.md').read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/devinslick/fmd-client",
+    url="https://github.com/devinslick/fmd_api",
     py_modules=["fmd_api"],
     classifiers=[
         "Programming Language :: Python :: 3",
