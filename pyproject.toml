@@ -1,16 +1,10 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "fmd_api"
-version = "0.1.0"
-authors = [
-    {name = "Devin Slick", email = "fmd_client_github@devinslick.com"},
-]
-description = "A Python client for the FMD server API"
+version = "2.0.0-dev0"
+authors = [{name = "devinslick"}]
+description = "A Python client for the FMD (Find My Device) server API"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.7",
@@ -33,6 +27,16 @@ dependencies = [
     "cryptography",
     "aiohttp",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.0"
+pytest-asyncio = "^0.20"
+aioresponses = "^0.9"
+
 
 [project.urls]
 Homepage = "https://github.com/devinslick/fmd_api"
