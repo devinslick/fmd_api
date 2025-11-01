@@ -53,8 +53,12 @@ dev = [
     "mypy",
 ]
 
-[tool.setuptools]
-py-modules = ["fmd_api"]
+# --- IMPORTANT CHANGE ---
+# Use setuptools.find to include the package directory (fmd_api/) in built distributions.
+# Do NOT use py-modules = ["fmd_api"] which causes packaging a single fmd_api.py module.
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests*", "debugging*"]
 
 [tool.black]
 line-length = 120
