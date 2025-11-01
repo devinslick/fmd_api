@@ -1,4 +1,3 @@
-"""Data types used by fmd_api v2."""
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any

@@ -28,7 +28,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .helpers import b64_decode_padded, _pad_base64
 from .exceptions import FmdApiException, AuthenticationError
-from .types import PhotoResult, Location
+from .models import PhotoResult, Location
 
 # Constants copied from original module to ensure parity
 CONTEXT_STRING_LOGIN = "context:loginAuthentication"

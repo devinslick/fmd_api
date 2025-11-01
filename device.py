@@ -9,7 +9,7 @@ import json
 from datetime import datetime, timezone
 from typing import Optional, AsyncIterator, List
 
-from .types import Location, PhotoResult
+from .models import Location, PhotoResult
 from .exceptions import OperationError
 from .helpers import b64_decode_padded
 from .client import FmdClient
