@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fmd_api"
-version = "0.1.0"
+version = "2.0.0"
 authors = [
     {name = "Devin Slick", email = "fmd_client_github@devinslick.com"},
 ]
-description = "A Python client for the FMD server API"
+description = "A Python client for the FMD server API with high-level Device and low-level Client interfaces"
 readme = "README.md"
 requires-python = ">=3.7"
 classifiers = [
@@ -21,14 +21,14 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Monitoring",
+    "Typing :: Typed",
 ]
 keywords = ["fmd", "find-my-device", "location", "tracking", "device-tracking", "api-client"]
 dependencies = [
-    "requests",
     "argon2-cffi",
     "cryptography",
     "aiohttp",
@@ -44,13 +44,14 @@ Documentation = "https://github.com/devinslick/fmd_api#readme"
 dev = [
     "pytest>=7.0",
     "pytest-asyncio",
+    "pytest-cov",
     "black",
     "flake8",
     "mypy",
 ]
 
 [tool.setuptools]
-py-modules = ["fmd_api"]
+packages = ["fmd_api"]
 
 [tool.black]
 line-length = 120
