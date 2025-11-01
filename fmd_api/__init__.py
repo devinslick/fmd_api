@@ -2,6 +2,7 @@
 from .client import FmdClient
 from .device import Device
 from .exceptions import FmdApiException, AuthenticationError, DeviceNotFoundError, OperationError
+from ._version import __version__
 
 __all__ = [
     "FmdClient",
@@ -10,4 +11,5 @@ __all__ = [
     "AuthenticationError",
     "DeviceNotFoundError",
     "OperationError",
+    "__version__",
 ]
