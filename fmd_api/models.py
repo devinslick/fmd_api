@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Dict, Any
 
+
 @dataclass
 class Location:
     lat: float
@@ -14,6 +15,7 @@ class Location:
     battery_pct: Optional[int] = None
     provider: Optional[str] = None
     raw: Optional[Dict[str, Any]] = None
+
 
 @dataclass
 class PhotoResult:

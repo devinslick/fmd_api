@@ -14,11 +14,13 @@ from .exceptions import OperationError
 from .helpers import b64_decode_padded
 from .client import FmdClient
 
+
 def _parse_location_blob(blob_b64: str) -> Location:
     """Helper to decrypt and parse a location blob into Location dataclass."""
     # This function expects the caller to pass in a client to decrypt; kept here
     # for signature clarity in Device methods.
     raise RuntimeError("Internal: _parse_location_blob should not be called directly")
+
 
 class Device:
     def __init__(self, client: FmdClient, fmd_id: str, raw: dict = None):
@@ -128,13 +130,19 @@ class Device:
             except Exception:
                 raw_meta = {"note": "binary image or base64 string; no JSON metadata"}
             # Build PhotoResult; mime type not provided by server so default to image/jpeg
-            return PhotoResult(data=image_bytes, mime_type="image/jpeg", timestamp=datetime.now(timezone.utc), raw=raw_meta)
+            return PhotoResult(
+                data=image_bytes,
+                mime_type="image/jpeg",
+                timestamp=datetime.now(
+                    timezone.utc),
+                raw=raw_meta)
         except Exception as e:
             raise OperationError(f"Failed to decode picture blob: {e}") from e
 
     async def lock(self, message: Optional[str] = None, passcode: Optional[str] = None) -> bool:
         # The original API supports "lock" command; it does not carry message/passcode in the current client
-        # Implementation preserves original behavior (sends "lock" command). Extensions can append data if server supports it.
+        # Implementation preserves original behavior (sends "lock" command).
+        # Extensions can append data if server supports it.
         return await self.client.send_command("lock")
 
     async def wipe(self, confirm: bool = False) -> bool:

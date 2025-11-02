@@ -26,9 +26,8 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from .helpers import b64_decode_padded, _pad_base64
-from .exceptions import FmdApiException, AuthenticationError
-from .models import PhotoResult, Location
+from .helpers import _pad_base64
+from .exceptions import FmdApiException
 
 # Constants copied from original module to ensure parity
 CONTEXT_STRING_LOGIN = "context:loginAuthentication"
@@ -183,12 +182,18 @@ class FmdClient:
                 # Handle 401 -> re-authenticate once
                 if resp.status == 401 and retry_auth and self._fmd_id and self._password:
                     log.info("Received 401 Unauthorized, re-authenticating...")
-                    await self.authenticate(self._fmd_id, self._password, self.session_duration)
+                    await self.authenticate(
+                        self._fmd_id, self._password, self.session_duration)
                     payload["IDT"] = self.access_token
-                    return await self._make_api_request(method, endpoint, payload, stream, expect_json, retry_auth=False)
+                    return await self._make_api_request(
+                        method, endpoint, payload, stream, expect_json,
+                        retry_auth=False)
 
                 resp.raise_for_status()
-                log.debug(f"{endpoint} response - status: {resp.status}, content-type: {resp.content_type}, content-length: {resp.content_length}")
+                log.debug(
+                    f"{endpoint} response - status: {resp.status}, "
+                    f"content-type: {resp.content_type}, "
+                    f"content-length: {resp.content_length}")
 
                 if not stream:
                     if expect_json:
@@ -223,13 +228,19 @@ class FmdClient:
     # -------------------------
     # Location / picture access
     # -------------------------
-    async def get_locations(self, num_to_get: int = -1, skip_empty: bool = True, max_attempts: int = 10) -> List[str]:
+    async def get_locations(
+            self, num_to_get: int = -1, skip_empty: bool = True,
+            max_attempts: int = 10) -> List[str]:
         """
         Fetches all or the N most recent location blobs.
         Returns list of base64-encoded blobs (strings), same as original get_all_locations.
         """
-        log.debug(f"Getting locations, num_to_get={num_to_get}, skip_empty={skip_empty}")
-        size_str = await self._make_api_request("PUT", "/api/v1/locationDataSize", {"IDT": self.access_token, "Data": ""})
+        log.debug(
+            f"Getting locations, num_to_get={num_to_get}, "
+            f"skip_empty={skip_empty}")
+        size_str = await self._make_api_request(
+            "PUT", "/api/v1/locationDataSize",
+            {"IDT": self.access_token, "Data": ""})
         size = int(size_str)
         log.debug(f"Server reports {size} locations available")
         if size == 0:
@@ -242,7 +253,9 @@ class FmdClient:
             indices = range(size)
             for i in indices:
                 log.info(f"  - Downloading location at index {i}...")
-                blob = await self._make_api_request("PUT", "/api/v1/location", {"IDT": self.access_token, "Data": str(i)})
+                blob = await self._make_api_request(
+                    "PUT", "/api/v1/location",
+                    {"IDT": self.access_token, "Data": str(i)})
                 locations.append(blob)
             return locations
         else:
@@ -251,8 +264,11 @@ class FmdClient:
             start_index = size - 1
 
             if skip_empty:
-                indices = range(start_index, max(-1, start_index - max_attempts), -1)
-                log.info(f"Will search for {num_to_download} non-empty location(s) starting from index {start_index}")
+                indices = range(
+                    start_index, max(-1, start_index - max_attempts), -1)
+                log.info(
+                    f"Will search for {num_to_download} non-empty location(s) "
+                    f"starting from index {start_index}")
             else:
                 end_index = size - num_to_download
                 indices = range(start_index, end_index - 1, -1)
@@ -272,7 +288,9 @@ class FmdClient:
                 log.warning(f"Empty blob received for location index {i}, repr: {repr(blob[:50] if blob else blob)}")
 
         if not locations and num_to_get != -1:
-            log.warning(f"No valid locations found after checking {min(max_attempts, size)} indices")
+            log.warning(
+                f"No valid locations found after checking "
+                f"{min(max_attempts, size)} indices")
 
         return locations
 
@@ -280,7 +298,9 @@ class FmdClient:
         """Fetches all or the N most recent picture metadata blobs (raw server response)."""
         try:
             await self._ensure_session()
-            async with self._session.put(f"{self.base_url}/api/v1/pictures", json={"IDT": self.access_token, "Data": ""}) as resp:
+            async with self._session.put(
+                    f"{self.base_url}/api/v1/pictures",
+                    json={"IDT": self.access_token, "Data": ""}) as resp:
                 resp.raise_for_status()
                 json_data = await resp.json()
                 # Extract the Data field if it exists, otherwise use the response as-is
@@ -376,8 +396,6 @@ class FmdClient:
         command = provider_map.get(provider.lower(), "locate")
         log.info(f"Requesting location update with provider: {provider} (command: {command})")
         return await self.send_command(command)
-
-    
 
     async def set_bluetooth(self, enable: bool) -> bool:
         """Set Bluetooth power explicitly: True = on, False = off."""

@@ -3,6 +3,7 @@ Test: get_pictures and download/decrypt the first picture found
 Usage:
   python tests/functional/test_pictures.py
 """
+from tests.utils.read_credentials import read_credentials
 import asyncio
 import base64
 import sys
@@ -11,7 +12,6 @@ from pathlib import Path
 # Add repo root to path for package imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from tests.utils.read_credentials import read_credentials
 
 async def main():
     creds = read_credentials()
@@ -20,7 +20,6 @@ async def main():
         return
 
     from fmd_api import FmdClient
-    from fmd_api.device import Device
     client = await FmdClient.create(creds["BASE_URL"], creds["FMD_ID"], creds["PASSWORD"])
     try:
         pics = await client.get_pictures(10)
@@ -57,7 +56,7 @@ async def main():
             with open(out, "wb") as f:
                 f.write(img)
             print("Saved picture to", out)
-        except Exception as e:
+        except Exception:
             print("Decrypted payload not a base64 image string; saving raw bytes as picture_0.bin")
             with open("picture_0.bin", "wb") as f:
                 f.write(decrypted)
