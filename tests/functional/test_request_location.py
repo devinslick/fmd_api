@@ -5,7 +5,6 @@ Usage:
 provider: one of all,gps,cell,last (default: all)
 wait_seconds: seconds to wait for the device to respond (default: 30)
 """
-from tests.utils.read_credentials import read_credentials
 import asyncio
 import json
 import sys
@@ -13,6 +12,8 @@ from pathlib import Path
 
 # Add repo root to path for package imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from tests.utils.read_credentials import read_credentials
 
 
 async def main():

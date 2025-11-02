@@ -4,7 +4,6 @@ Fetch most recent N blobs and decrypt each (prints parsed JSON).
 Usage:
   python tests/functional/test_locations.py [N]
 """
-from tests.utils.read_credentials import read_credentials
 import asyncio
 import json
 import sys
@@ -12,6 +11,8 @@ from pathlib import Path
 
 # Add repo root to path for package imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from tests.utils.read_credentials import read_credentials
 
 
 async def main():

@@ -3,13 +3,14 @@ Test: export_data_zip (downloads export ZIP to provided filename)
 Usage:
   python tests/functional/test_export.py [output.zip]
 """
-from tests.utils.read_credentials import read_credentials
 import asyncio
 import sys
 from pathlib import Path
 
 # Add repo root to path for package imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from tests.utils.read_credentials import read_credentials
 
 
 async def main():
