@@ -282,9 +282,16 @@ class FmdClient:
             await self._ensure_session()
             async with self._session.put(f"{self.base_url}/api/v1/pictures", json={"IDT": self.access_token, "Data": ""}) as resp:
                 resp.raise_for_status()
-                all_pictures = await resp.json()
+                json_data = await resp.json()
+                # Extract the Data field if it exists, otherwise use the response as-is
+                all_pictures = json_data.get("Data", json_data) if isinstance(json_data, dict) else json_data
         except aiohttp.ClientError as e:
             log.warning(f"Failed to get pictures: {e}. The endpoint may not exist or requires a different method.")
+            return []
+
+        # Ensure all_pictures is a list
+        if not isinstance(all_pictures, list):
+            log.warning(f"Unexpected pictures response type: {type(all_pictures)}")
             return []
 
         if num_to_get == -1:

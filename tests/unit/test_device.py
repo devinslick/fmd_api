@@ -235,3 +235,181 @@ async def test_device_force_refresh():
             assert abs(loc3.lat - 15.0) < 1e-6
         finally:
             await client.close()
+
+@pytest.mark.asyncio
+async def test_device_cached_location_property():
+    """Test Device.cached_location property access."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b'\x00' * 32
+    client.private_key = DummyKey()
+    
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    session_key = b'\x00' * 32
+    aesgcm = AESGCM(session_key)
+    iv = b'\x06' * 12
+    plaintext = b'{"lat":20.0,"lon":30.0,"date":1600000000000,"bat":75}'
+    ciphertext = aesgcm.encrypt(iv, plaintext, None)
+    blob = b'\xAA' * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    
+    client.access_token = "token"
+    device = Device(client, "test-device")
+    
+    # Initially None
+    assert device.cached_location is None
+    
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "1"})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob_b64})
+        try:
+            await device.refresh()
+            # Now should have cached location
+            assert device.cached_location is not None
+            assert abs(device.cached_location.lat - 20.0) < 1e-6
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_refresh_without_force():
+    """Test Device.refresh with force=False doesn't re-fetch if cached."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b'\x00' * 32
+    client.private_key = DummyKey()
+    
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    session_key = b'\x00' * 32
+    aesgcm = AESGCM(session_key)
+    iv = b'\x07' * 12
+    plaintext = b'{"lat":25.0,"lon":35.0,"date":1600000000000,"bat":85}'
+    ciphertext = aesgcm.encrypt(iv, plaintext, None)
+    blob = b'\xAA' * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    
+    client.access_token = "token"
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        # Only one set of mocks
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "1"})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob_b64})
+        try:
+            await device.refresh()
+            loc1 = device.cached_location
+            
+            # Second refresh without force should not make HTTP calls (mocks would fail if it did)
+            await device.refresh(force=False)
+            loc2 = device.cached_location
+            
+            assert loc1 is loc2  # Same cached object
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_picture_commands():
+    """Test Device picture-related command shortcuts."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        # take_front_photo
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        # take_rear_photo
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            result1 = await device.take_front_photo()
+            assert result1 is True
+            
+            result2 = await device.take_rear_photo()
+            assert result2 is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_lock_with_message():
+    """Test Device.lock with custom message."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            result = await device.lock("Please return this device")
+            assert result is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_multiple_history_calls():
+    """Test Device.get_history can be called multiple times."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b'\x00' * 32
+    client.private_key = DummyKey()
+    
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    session_key = b'\x00' * 32
+    aesgcm = AESGCM(session_key)
+    
+    blobs = []
+    for i in range(2):
+        iv = bytes([i+10] * 12)
+        plaintext = json.dumps({"lat": float(30+i), "lon": float(40+i), "date": 1600000000000 + i*1000, "bat": 80}).encode('utf-8')
+        ciphertext = aesgcm.encrypt(iv, plaintext, None)
+        blob = b'\xAA' * 384 + iv + ciphertext
+        blobs.append(base64.b64encode(blob).decode('utf-8').rstrip('='))
+    
+    client.access_token = "token"
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        # First call to get_history
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "2"})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blobs[0]})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blobs[1]})
+        
+        # Second call to get_history
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "2"})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blobs[0]})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blobs[1]})
+        
+        try:
+            # First iteration
+            locs1 = []
+            async for loc in device.get_history(limit=2):
+                locs1.append(loc)
+            assert len(locs1) == 2
+            
+            # Second iteration (should work independently)
+            locs2 = []
+            async for loc in device.get_history(limit=2):
+                locs2.append(loc)
+            assert len(locs2) == 2
+            
+            # Both should have same data (different Location objects)
+            assert abs(locs1[0].lat - locs2[0].lat) < 1e-6
+        finally:
+            await client.close()
