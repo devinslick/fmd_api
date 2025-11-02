@@ -22,6 +22,11 @@ Examples:
 """
 import asyncio
 import sys
+from pathlib import Path
+
+# Add repo root to path for package imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 from tests.utils.read_credentials import read_credentials
 
 async def main():
