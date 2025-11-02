@@ -1,30 +1,28 @@
 """
 Test: Validated command methods (ring, lock, camera, bluetooth, etc.)
 Usage:
-  python test_scripts/test_commands.py <command> [args...]
+  python tests/functional/test_commands.py <command> [args...]
 
 Commands:
   ring                    - Make device ring
   lock                    - Lock device screen
   camera <front|back>     - Take picture (default: back)
-  bluetooth <on|off>      - Toggle Bluetooth
-  dnd <on|off>           - Toggle Do Not Disturb
+  bluetooth <on|off>      - Set Bluetooth on/off
+  dnd <on|off>           - Set Do Not Disturb on/off
   ringer <normal|vibrate|silent> - Set ringer mode
   stats                   - Get device network statistics
   locate [all|gps|cell|last] - Request location update (default: all)
 
 Examples:
-  python test_scripts/test_commands.py ring
-  python test_scripts/test_commands.py camera front
-  python test_scripts/test_commands.py bluetooth on
-  python test_scripts/test_commands.py ringer vibrate
-  python test_scripts/test_commands.py locate gps
+  python tests/functional/test_commands.py ring
+  python tests/functional/test_commands.py camera front
+  python tests/functional/test_commands.py bluetooth on
+  python tests/functional/test_commands.py ringer vibrate
+  python tests/functional/test_commands.py locate gps
 """
 import asyncio
 import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.read_credentials import read_credentials
+from tests.utils.read_credentials import read_credentials
 
 async def main():
     creds = read_credentials()
@@ -64,7 +62,7 @@ async def main():
             if state not in ["on", "off"]:
                 print("Error: bluetooth state must be 'on' or 'off'")
                 return
-            result = await client.toggle_bluetooth(state == "on")
+            result = await client.set_bluetooth(state == "on")
             print(f"Bluetooth {state} command sent: {result}")
             
         elif command == "dnd":
@@ -75,7 +73,7 @@ async def main():
             if state not in ["on", "off"]:
                 print("Error: dnd state must be 'on' or 'off'")
                 return
-            result = await client.toggle_do_not_disturb(state == "on")
+            result = await client.set_do_not_disturb(state == "on")
             print(f"Do Not Disturb {state} command sent: {result}")
             
         elif command == "ringer":

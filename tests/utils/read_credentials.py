@@ -1,14 +1,17 @@
 """
 Utility: read credentials from credentials.txt (KEY=VALUE lines)
 
-Place credentials.txt next to the test scripts (or set environment variables).
+Place credentials.txt in tests/utils/ or set environment variables.
 """
 from pathlib import Path
 import os
 
-def read_credentials(path: str | Path = "credentials.txt") -> dict:
+def read_credentials(path: str | Path = None) -> dict:
     """Return dict of credentials from the given file. Falls back to env vars if not present."""
     creds = {}
+    if path is None:
+        # Default to tests/utils/credentials.txt
+        path = Path(__file__).parent / "credentials.txt"
     p = Path(path)
     if p.exists():
         for ln in p.read_text().splitlines():

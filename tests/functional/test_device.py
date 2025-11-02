@@ -1,13 +1,11 @@
 """
 Test: Device class flows (refresh, get_location, fetch_pictures, download_photo)
 Usage:
-  python test_scripts/test_device.py
+  python tests/functional/test_device.py
 """
 import asyncio
 import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.read_credentials import read_credentials
+from tests.utils.read_credentials import read_credentials
 
 async def main():
     creds = read_credentials()

@@ -1,14 +1,12 @@
 """
 Test: get_pictures and download/decrypt the first picture found
 Usage:
-  python test_scripts/test_pictures.py
+  python tests/functional/test_pictures.py
 """
 import asyncio
 import base64
 import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.read_credentials import read_credentials
+from tests.utils.read_credentials import read_credentials
 
 async def main():
     creds = read_credentials()

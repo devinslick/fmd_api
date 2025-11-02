@@ -41,13 +41,16 @@ async def test_get_locations_and_decrypt(monkeypatch):
     # Mock the endpoints used by get_locations:
     with aioresponses() as m:
         m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "1"})
-        m.put("https://fmd.example.com/api/v1/location", payload=blob_b64)
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob_b64})
         client.access_token = "dummy-token"
-        locations = await client.get_locations(num_to_get=1)
-        assert len(locations) == 1
-        decrypted = client.decrypt_data_blob(locations[0])
-        assert b'"lat":1.0' in decrypted
-        assert b'"lon":2.0' in decrypted
+        try:
+            locations = await client.get_locations(num_to_get=1)
+            assert len(locations) == 1
+            decrypted = client.decrypt_data_blob(locations[0])
+            assert b'"lat":1.0' in decrypted
+            assert b'"lon":2.0' in decrypted
+        finally:
+            await client.close()
 
 @pytest.mark.asyncio
 async def test_send_command_reauth(monkeypatch):
@@ -70,8 +73,11 @@ async def test_send_command_reauth(monkeypatch):
         monkeypatch.setattr(client, "authenticate", fake_authenticate)
         # Second attempt should now succeed
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
-        res = await client.send_command("ring")
-        assert res is True
+        try:
+            res = await client.send_command("ring")
+            assert res is True
+        finally:
+            await client.close()
 
 @pytest.mark.asyncio
 async def test_export_data_zip_stream(monkeypatch, tmp_path):
@@ -81,7 +87,10 @@ async def test_export_data_zip_stream(monkeypatch, tmp_path):
     with aioresponses() as m:
         m.post("https://fmd.example.com/api/v1/exportData", body=small_zip, status=200)
         out_file = tmp_path / "export.zip"
-        await client.export_data_zip(str(out_file))
-        assert out_file.exists()
-        content = out_file.read_bytes()
-        assert content.startswith(b'PK\x03\x04')
+        try:
+            await client.export_data_zip(str(out_file))
+            assert out_file.exists()
+            content = out_file.read_bytes()
+            assert content.startswith(b'PK\x03\x04')
+        finally:
+            await client.close()

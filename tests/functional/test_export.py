@@ -1,13 +1,11 @@
 """
 Test: export_data_zip (downloads export ZIP to provided filename)
 Usage:
-  python test_scripts/test_export.py [output.zip]
+  python tests/functional/test_export.py [output.zip]
 """
 import asyncio
 import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.read_credentials import read_credentials
+from tests.utils.read_credentials import read_credentials
 
 async def main():
     creds = read_credentials()

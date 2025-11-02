@@ -5,6 +5,11 @@ __pycache__/
 *.pyd
 *.zip
 
+# User configuration files
+*.env
+credentials.txt
+*.jpg
+
 # C extensions
 *.so
 

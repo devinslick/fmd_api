@@ -1,16 +1,14 @@
 """
 Test: request a new location command and then poll for the latest location.
 Usage:
-  python test_scripts/test_request_location.py [provider] [wait_seconds]
+  python tests/functional/test_request_location.py [provider] [wait_seconds]
 provider: one of all,gps,cell,last (default: all)
 wait_seconds: seconds to wait for the device to respond (default: 30)
 """
 import asyncio
 import json
 import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.read_credentials import read_credentials
+from tests.utils.read_credentials import read_credentials
 
 async def main():
     creds = read_credentials()

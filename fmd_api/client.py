@@ -9,8 +9,8 @@ This module implements:
  - get_pictures (port of get_pictures)
  - export_data_zip (streamed download)
  - send_command (RSA-PSS signing and POST to /api/v1/command)
- - convenience wrappers: request_location, toggle_bluetooth, toggle_do_not_disturb,
-   set_ringer_mode, get_device_stats, take_picture
+ - convenience wrappers: request_location, set_bluetooth, set_do_not_disturb,
+     set_ringer_mode, get_device_stats, take_picture
 """
 from __future__ import annotations
 
@@ -298,6 +298,7 @@ class FmdClient:
     async def export_data_zip(self, out_path: str, session_duration: int = 3600, fallback: bool = True):
         url = f"{self.base_url}/api/v1/exportData"
         try:
+            await self._ensure_session()
             # POST with session request; stream the response to file
             async with self._session.post(url, json={"session": session_duration}) as resp:
                 if resp.status == 404:
@@ -369,12 +370,16 @@ class FmdClient:
         log.info(f"Requesting location update with provider: {provider} (command: {command})")
         return await self.send_command(command)
 
-    async def toggle_bluetooth(self, enable: bool) -> bool:
+    
+
+    async def set_bluetooth(self, enable: bool) -> bool:
+        """Set Bluetooth power explicitly: True = on, False = off."""
         command = "bluetooth on" if enable else "bluetooth off"
         log.info(f"{'Enabling' if enable else 'Disabling'} Bluetooth")
         return await self.send_command(command)
 
-    async def toggle_do_not_disturb(self, enable: bool) -> bool:
+    async def set_do_not_disturb(self, enable: bool) -> bool:
+        """Set Do Not Disturb explicitly: True = on, False = off."""
         command = "nodisturb on" if enable else "nodisturb off"
         log.info(f"{'Enabling' if enable else 'Disabling'} Do Not Disturb mode")
         return await self.send_command(command)

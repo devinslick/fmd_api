@@ -2,14 +2,12 @@
 Test: get_locations + decrypt_data_blob
 Fetch most recent N blobs and decrypt each (prints parsed JSON).
 Usage:
-  python test_scripts/test_locations.py [N]
+  python tests/functional/test_locations.py [N]
 """
 import asyncio
 import json
 import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parent.parent))
-from utils.read_credentials import read_credentials
+from tests.utils.read_credentials import read_credentials
 
 async def main():
     creds = read_credentials()

@@ -30,14 +30,17 @@ async def test_device_refresh_and_get_location(monkeypatch):
 
     with aioresponses() as m:
         m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "1"})
-        m.put("https://fmd.example.com/api/v1/location", payload=blob_b64)
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob_b64})
         client.access_token = "token"
         device = Device(client, "alice")
-        await device.refresh()
-        loc = await device.get_location()
-        assert loc is not None
-        assert abs(loc.lat - 10.0) < 1e-6
-        assert abs(loc.lon - 20.0) < 1e-6
+        try:
+            await device.refresh()
+            loc = await device.get_location()
+            assert loc is not None
+            assert abs(loc.lat - 10.0) < 1e-6
+            assert abs(loc.lon - 20.0) < 1e-6
+        finally:
+            await client.close()
 
 @pytest.mark.asyncio
 async def test_device_fetch_and_download_picture(monkeypatch):
@@ -65,9 +68,12 @@ async def test_device_fetch_and_download_picture(monkeypatch):
         m.put("https://fmd.example.com/api/v1/pictures", payload=[blob_b64])
         client.access_token = "token"
         device = Device(client, "alice")
-        pics = await device.fetch_pictures()
-        assert len(pics) == 1
-        # download the picture and verify we got PNGDATA bytes
-        photo = await device.download_photo(pics[0])
-        assert photo.data == b'PNGDATA'
-        assert photo.mime_type.startswith("image/")
+        try:
+            pics = await device.fetch_pictures()
+            assert len(pics) == 1
+            # download the picture and verify we got PNGDATA bytes
+            photo = await device.download_photo(pics[0])
+            assert photo.data == b'PNGDATA'
+            assert photo.mime_type.startswith("image/")
+        finally:
+            await client.close()
