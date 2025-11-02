@@ -413,3 +413,268 @@ async def test_device_multiple_history_calls():
             assert abs(locs1[0].lat - locs2[0].lat) < 1e-6
         finally:
             await client.close()
+
+@pytest.mark.asyncio
+async def test_device_name_property():
+    """Test Device.name property from raw data."""
+    client = FmdClient("https://fmd.example.com")
+    device = Device(client, "my-phone-id", raw={"name": "My Phone"})
+    
+    assert device.name == "My Phone"
+    assert device.id == "my-phone-id"
+    await client.close()
+
+@pytest.mark.asyncio
+async def test_device_wipe_with_confirm():
+    """Test Device.wipe when confirm=True actually sends command."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            result = await device.wipe(confirm=True)
+            assert result is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_ringer_via_client():
+    """Test Device can use client's set_ringer_mode."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            # Device doesn't have set_ringer_mode, use client directly
+            result = await device.client.set_ringer_mode("vibrate")
+            assert result is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_bluetooth_via_client():
+    """Test Device can use client's set_bluetooth."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            # Device doesn't have set_bluetooth, use client directly
+            result1 = await device.client.set_bluetooth(True)
+            assert result1 is True
+            
+            result2 = await device.client.set_bluetooth(False)
+            assert result2 is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_dnd_via_client():
+    """Test Device can use client's set_do_not_disturb."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            # Device doesn't have set_do_not_disturb, use client directly
+            result1 = await device.client.set_do_not_disturb(True)
+            assert result1 is True
+            
+            result2 = await device.client.set_do_not_disturb(False)
+            assert result2 is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_get_history_with_all_locations():
+    """Test Device.get_history with limit=-1 fetches all."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b'\x00' * 32
+    client.private_key = DummyKey()
+    
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    session_key = b'\x00' * 32
+    aesgcm = AESGCM(session_key)
+    
+    blobs = []
+    for i in range(3):
+        iv = bytes([i+20] * 12)
+        plaintext = json.dumps({"lat": float(40+i), "lon": float(50+i), "date": 1600000000000 + i*1000, "bat": 85}).encode('utf-8')
+        ciphertext = aesgcm.encrypt(iv, plaintext, None)
+        blob = b'\xAA' * 384 + iv + ciphertext
+        blobs.append(base64.b64encode(blob).decode('utf-8').rstrip('='))
+    
+    client.access_token = "token"
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "3"})
+        for blob_b64 in blobs:
+            m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob_b64})
+        
+        try:
+            locs = []
+            async for loc in device.get_history(limit=-1):
+                locs.append(loc)
+            
+            assert len(locs) == 3
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_fetch_pictures():
+    """Test Device.fetch_pictures method."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        mock_pictures = [{"id": 0, "date": 1600000000000}]
+        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": mock_pictures})
+        
+        try:
+            pictures = await device.fetch_pictures(num_to_get=1)
+            assert len(pictures) == 1
+            assert pictures[0]["id"] == 0
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_request_location_via_client():
+    """Test Device can use client's request_location."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            # Device doesn't have request_location, use client directly
+            result = await device.client.request_location(provider="gps")
+            assert result is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_get_stats_via_client():
+    """Test Device can use client's get_device_stats."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            # Device doesn't have get_stats, use client's get_device_stats
+            result = await device.client.get_device_stats()
+            assert result is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_device_refresh_updates_cached_location():
+    """Test that refresh() updates the cached location."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b'\x00' * 32
+    client.private_key = DummyKey()
+    
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    session_key = b'\x00' * 32
+    aesgcm = AESGCM(session_key)
+    
+    # Create two different blobs
+    iv1 = b'\x30' * 12
+    plaintext1 = b'{"lat":50.0,"lon":60.0,"date":1600000000000,"bat":90}'
+    ciphertext1 = aesgcm.encrypt(iv1, plaintext1, None)
+    blob1 = b'\xAA' * 384 + iv1 + ciphertext1
+    blob1_b64 = base64.b64encode(blob1).decode('utf-8').rstrip('=')
+    
+    iv2 = b'\x31' * 12
+    plaintext2 = b'{"lat":55.0,"lon":65.0,"date":1600000001000,"bat":85}'
+    ciphertext2 = aesgcm.encrypt(iv2, plaintext2, None)
+    blob2 = b'\xAA' * 384 + iv2 + ciphertext2
+    blob2_b64 = base64.b64encode(blob2).decode('utf-8').rstrip('=')
+    
+    client.access_token = "token"
+    device = Device(client, "test-device")
+    
+    with aioresponses() as m:
+        # First refresh
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "1"})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob1_b64})
+        
+        # Second refresh with force=True
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "1"})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob2_b64})
+        
+        try:
+            await device.refresh()
+            loc1 = device.cached_location
+            assert abs(loc1.lat - 50.0) < 1e-6
+            
+            # Force refresh should get new data
+            await device.refresh(force=True)
+            loc2 = device.cached_location
+            assert abs(loc2.lat - 55.0) < 1e-6
+        finally:
+            await client.close()

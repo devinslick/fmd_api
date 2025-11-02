@@ -472,3 +472,209 @@ async def test_authenticate_error_handling():
                 await client.authenticate("bad_id", "bad_password", session_duration=3600)
         finally:
             await client.close()
+
+@pytest.mark.asyncio
+async def test_get_locations_with_skip_empty_false():
+    """Test get_locations with skip_empty=False fetches all indices."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b'\x00' * 32
+    client.private_key = DummyKey()
+    
+    await client._ensure_session()
+    
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "2"})
+        # Both empty and valid blobs
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": ""})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": ""})
+        
+        try:
+            # With skip_empty=False, should return empty blobs too
+            locs = await client.get_locations(num_to_get=2, skip_empty=False)
+            # Both are empty strings, so should get empty list since empty strings are filtered
+            assert len(locs) == 0
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_send_command_failure():
+    """Test send_command when server returns non-200 status."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=500, body="Server Error")
+        
+        try:
+            from fmd_api.exceptions import FmdApiException
+            with pytest.raises(FmdApiException, match="Failed to send command"):
+                await client.send_command("ring")
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_decrypt_blob_invalid_format():
+    """Test decrypt_data_blob with malformed blob."""
+    client = FmdClient("https://fmd.example.com")
+    
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b'\x00' * 32
+    client.private_key = DummyKey()
+    
+    # Blob too short to contain IV and ciphertext
+    short_blob = base64.b64encode(b'x' * 10).decode('utf-8')
+    
+    from fmd_api.exceptions import FmdApiException
+    with pytest.raises(FmdApiException, match="Blob too small"):
+        client.decrypt_data_blob(short_blob)
+
+@pytest.mark.asyncio
+async def test_export_data_404():
+    """Test export_data_zip when endpoint doesn't exist."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    
+    await client._ensure_session()
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/exportData", status=404)
+        
+        try:
+            from fmd_api.exceptions import FmdApiException
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+                with pytest.raises(FmdApiException, match="exportData endpoint not found"):
+                    await client.export_data_zip(tmp.name)
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_get_pictures_empty_response():
+    """Test get_pictures when server returns empty list."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    
+    await client._ensure_session()
+    
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": []})
+        
+        try:
+            pictures = await client.get_pictures()
+            assert pictures == []
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_request_location_unknown_provider():
+    """Test request_location with unknown provider (falls back to 'locate')."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    
+    with aioresponses() as m:
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            # Unknown provider falls back to generic "locate" command
+            result = await client.request_location(provider="unknown")
+            assert result is True
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_close_without_session():
+    """Test close when no session exists."""
+    client = FmdClient("https://fmd.example.com")
+    # Should not raise error
+    await client.close()
+    assert client._session is None
+
+@pytest.mark.asyncio
+async def test_multiple_close_calls():
+    """Test calling close multiple times."""
+    client = FmdClient("https://fmd.example.com")
+    await client._ensure_session()
+    
+    # First close
+    await client.close()
+    assert client._session is None
+    
+    # Second close should not raise error
+    await client.close()
+    assert client._session is None
+
+@pytest.mark.asyncio
+async def test_get_locations_max_attempts():
+    """Test get_locations respects max_attempts parameter."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b'\x00' * 32
+    client.private_key = DummyKey()
+    
+    await client._ensure_session()
+    
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "100"})
+        # Only set up 3 mocks even though max_attempts could be higher
+        for i in range(3):
+            m.put("https://fmd.example.com/api/v1/location", payload={"Data": ""})
+        
+        try:
+            # Request 1 location from 100 available, with max_attempts=3
+            locs = await client.get_locations(num_to_get=1, skip_empty=True, max_attempts=3)
+            # All 3 are empty, so should get empty list
+            assert len(locs) == 0
+        finally:
+            await client.close()
+
+@pytest.mark.asyncio
+async def test_set_ringer_mode_edge_cases():
+    """Test set_ringer_mode with all valid modes."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xAB" * 64
+    client.private_key = DummySigner()
+    
+    await client._ensure_session()
+    
+    with aioresponses() as m:
+        # Mock for each valid mode
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
+        
+        try:
+            result1 = await client.set_ringer_mode("normal")
+            assert result1 is True
+            
+            result2 = await client.set_ringer_mode("vibrate")
+            assert result2 is True
+            
+            result3 = await client.set_ringer_mode("silent")
+            assert result3 is True
+        finally:
+            await client.close()
