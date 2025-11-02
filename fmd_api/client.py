@@ -251,7 +251,7 @@ class FmdClient:
             start_index = size - 1
 
             if skip_empty:
-                indices = range(start_index, max(0, start_index - max_attempts), -1)
+                indices = range(start_index, max(-1, start_index - max_attempts), -1)
                 log.info(f"Will search for {num_to_download} non-empty location(s) starting from index {start_index}")
             else:
                 end_index = size - num_to_download
