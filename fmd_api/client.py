@@ -295,21 +295,29 @@ class FmdClient:
             log.info(f"Found {len(all_pictures)} pictures. Selecting the {num_to_download} most recent.")
             return all_pictures[-num_to_download:][::-1]
 
-    async def export_data_zip(self, output_file: str) -> None:
-        """Downloads the pre-packaged export data zip file from /api/v1/exportData."""
+    async def export_data_zip(self, out_path: str, session_duration: int = 3600, fallback: bool = True):
+        url = f"{self.base_url}/api/v1/exportData"
         try:
-            await self._ensure_session()
-            async with self._session.post(f"{self.base_url}/api/v1/exportData", json={"IDT": self.access_token, "Data": "unused"}) as resp:
+            # POST with session request; stream the response to file
+            async with self._session.post(url, json={"session": session_duration}) as resp:
+                if resp.status == 404:
+                    raise FmdApiException("exportData endpoint not found (404)")
                 resp.raise_for_status()
-                with open(output_file, 'wb') as f:
-                    while True:
-                        chunk = await resp.content.read(8192)
+                # stream to file
+                with open(out_path, "wb") as f:
+                    async for chunk in resp.content.iter_chunked(8192):
                         if not chunk:
                             break
                         f.write(chunk)
-            log.info(f"Exported data saved to {output_file}")
-        except aiohttp.ClientError as e:
-            log.error(f"Failed to export data: {e}")
+                return out_path
+        except aiohttp.ClientResponseError as e:
+            # include server response text for diagnostics
+            try:
+                body = await e.response.text()
+            except Exception:
+                body = "<no body>"
+            raise FmdApiException(f"Failed to export data: {e.status}, body={body}") from e
+        except Exception as e:
             raise FmdApiException(f"Failed to export data: {e}") from e
 
     # -------------------------

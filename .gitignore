@@ -41,3 +41,6 @@ env/
 # FMD Server and android app files
 fmd-server/
 fmd-android/
+
+#credentials file
+examples/tests/credentials.txt
