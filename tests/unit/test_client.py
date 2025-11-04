@@ -55,6 +55,115 @@ async def test_get_locations_and_decrypt(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_connector_configuration_applied():
+    """Client should apply SSL and pooling settings to the connector."""
+    import aiohttp
+
+    client = FmdClient(
+        "https://fmd.example.com",
+        ssl=False,  # disable verification
+        conn_limit=10,
+        conn_limit_per_host=5,
+        keepalive_timeout=15.0,
+    )
+
+    try:
+        await client._ensure_session()
+        # Ensure session/connector created
+        assert client._session is not None
+        connector = client._session.connector
+        assert isinstance(connector, aiohttp.TCPConnector)
+
+        # Validate SSL disabled (private attr in aiohttp)
+        assert getattr(connector, "_ssl", None) is False
+
+        # Validate limits (use properties when available; fall back to private attrs)
+        limit = getattr(connector, "limit", None)
+        if limit is None:
+            limit = getattr(connector, "_limit", None)
+        assert limit == 10
+
+        lph = getattr(connector, "limit_per_host", None)
+        if lph is None:
+            lph = getattr(connector, "_limit_per_host", None)
+        assert lph == 5
+
+        # Validate keepalive timeout (private in aiohttp)
+        kat = getattr(connector, "keepalive_timeout", None)
+        if kat is None:
+            kat = getattr(connector, "_keepalive_timeout", None)
+        # Some aiohttp versions may store as int or float; compare as float
+        assert pytest.approx(float(kat)) == 15.0
+    finally:
+        await client.close()
+
+
+def test_https_required():
+    """FmdClient should reject non-HTTPS base URLs."""
+    with pytest.raises(ValueError, match="HTTPS is required"):
+        FmdClient("http://fmd.example.com")
+
+
+@pytest.mark.asyncio
+async def test_create_closes_session_on_auth_failure(monkeypatch):
+    """FmdClient.create should close any created session if auth fails; avoid subclassing ClientSession."""
+    import aiohttp
+    from fmd_api.exceptions import FmdApiException
+
+    closed = {"count": 0}
+
+    real_cls = aiohttp.ClientSession
+
+    def factory(*args, **kwargs):
+        # Create a real session, then wrap its close method to track calls
+        sess = real_cls(*args, **kwargs)
+        real_close = sess.close
+
+        async def tracked_close():
+            closed["count"] += 1
+            await real_close()
+
+        # Replace instance method
+        setattr(sess, "close", tracked_close)
+        return sess
+
+    # Patch the symbol used in client.py to our factory
+    monkeypatch.setattr("fmd_api.client.aiohttp.ClientSession", factory)
+
+    # Mock the first auth call to fail (salt 401)
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/salt", status=401)
+        with pytest.raises(FmdApiException):
+            await FmdClient.create("https://fmd.example.com", "id", "pw")
+
+    # A session would have been created during the request; ensure it was closed
+    assert closed["count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_create_with_insecure_ssl_configures_connector(monkeypatch):
+    """Using create() with ssl=False should not error and should configure connector accordingly."""
+    async def fake_authenticate(self, fmd_id, password, session_duration):
+        # Minimal stub to avoid network
+        self._fmd_id = fmd_id
+        self._password = password
+        self.access_token = "token"
+
+    monkeypatch.setattr(FmdClient, "authenticate", fake_authenticate)
+
+    client = await FmdClient.create("https://fmd.example.com", "id", "pw", ssl=False)
+    try:
+        # Ensure session is created and connector ssl=False
+        await client._ensure_session()
+        import aiohttp
+
+        assert isinstance(client._session.connector, aiohttp.TCPConnector)
+        assert getattr(client._session.connector, "_ssl", None) is False
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_send_command_reauth(monkeypatch):
     client = FmdClient("https://fmd.example.com")
     # create a dummy private key with sign()

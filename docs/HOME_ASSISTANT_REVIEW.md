@@ -68,12 +68,9 @@ async def _make_api_request(self, ..., timeout: int = 30):
 **HA Rationale:** Only stable, released versions accepted as integration dependencies.
 
 **Status:** ✅ FIXED
-- Implemented configurable retry policy in `FmdClient._make_api_request()`
-- Handles 429 with `Retry-After` header and exponential backoff with jitter
-- Retries transient 5xx (500/502/503/504) and connection errors
-- Avoids unsafe retries for `/api/v1/command` POST requests
-- Configurable via constructor: `max_retries`, `backoff_base`, `backoff_max`, `jitter`
-- Added unit tests for 429 + Retry-After and 500 -> success flows
+- Bumped version to stable `2.0.0` in `pyproject.toml` and `fmd_api/_version.py`
+- Built sdist and wheel artifacts for release
+- All unit tests passing after version bump
 
 ---
 
@@ -111,7 +108,13 @@ if resp.status == 429:
 
 **HA Rationale:** Production integrations must handle rate limits gracefully to avoid service disruption.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Implemented 429 handling with Retry-After header support and exponential backoff with optional jitter
+- Retries for transient 5xx (500/502/503/504) and connection errors
+- Avoids unsafe retries for POST /api/v1/command, except on 401 re-auth or 429 with explicit Retry-After
+- Configurable via `max_retries`, `backoff_base`, `backoff_max`, `jitter`
+- Added unit tests: `test_rate_limit_retry_with_retry_after`, `test_server_error_retry_then_success`
+- All unit tests passing
 
 ---
 
@@ -174,7 +177,8 @@ async with await FmdClient.create(...) as client:
 
 **HA Rationale:** Misleading classifiers can cause installation issues.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Removed Python 3.7 classifier; `requires-python` is `>=3.8`
 
 ---
 
@@ -194,7 +198,13 @@ async with await FmdClient.create(...) as client:
 
 **HA Rationale:** Security and privacy requirement for production systems.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Removed logging of full JSON responses (line ~278); now logs only dict keys
+- Removed logging of response body text (line ~285); now logs only length
+- Added `_mask_token()` helper for safe token logging (shows first 8 chars)
+- Added comment to prevent signature logging in `send_command()`
+- Auth flow logs only workflow steps, never actual credentials
+- All 55 unit tests passing after sanitization
 
 ---
 
@@ -203,19 +213,23 @@ async with await FmdClient.create(...) as client:
 
 **Location:** `fmd_api/client.py` `_ensure_session()` method
 
-**Fix:** Add `verify_ssl` parameter to constructor:
+**Fix:** Add SSL parameter/connector configuration to constructor:
 ```python
-def __init__(self, base_url: str, ..., verify_ssl: bool = True):
-    self.verify_ssl = verify_ssl
+def __init__(..., ssl: Optional[ssl.SSLContext|bool] = None, ...):
+    self._ssl = ssl  # None=default verify, False=disable, SSLContext=custom
 
 async def _ensure_session(self):
-    connector = aiohttp.TCPConnector(ssl=self.verify_ssl)
+    connector = aiohttp.TCPConnector(ssl=self._ssl, ...)
     self._session = aiohttp.ClientSession(connector=connector)
 ```
 
 **HA Rationale:** Enterprise users and development environments need SSL configuration flexibility.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- New constructor options: `ssl` (None | False | SSLContext)
+- Verified by unit test `test_connector_configuration_applied`
+- Works with self-signed certs when `ssl=False`, or custom trust via SSLContext
+- HTTPS is explicitly enforced: `http://` base URLs are rejected by the client
 
 ---
 
@@ -228,7 +242,8 @@ async def _ensure_session(self):
 
 **HA Rationale:** Improves reliability in production environments with occasional network issues.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Covered by issue 5 implementation; includes exponential backoff for transient errors
 
 ---
 
@@ -280,7 +295,10 @@ async def _ensure_session(self):
 
 **HA Rationale:** Performance tuning capability for production deployments.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- New constructor options: `conn_limit`, `conn_limit_per_host`, `keepalive_timeout`
+- Applied via `aiohttp.TCPConnector` in `_ensure_session()`
+- Verified by unit test `test_connector_configuration_applied`
 
 ---
 
@@ -475,15 +493,15 @@ def __init__(self, ..., ssl_context: Optional[ssl.SSLContext] = None):
 4. Fix version string inconsistency
 5. Add `py.typed` file
 6. Implement async context manager
-7. Add rate limit handling
+7. Add rate limit handling — DONE
 
 **For Production Quality (Major):**
-- Fix Python 3.7 classifier
-- Sanitize logs (security)
-- Add SSL verification control
+- Fix Python 3.7 classifier — DONE
+- Sanitize logs (security) — DONE
+- Add SSL verification control — DONE
 - Improve type hints
-- Add retry logic
-- Configure connection pooling
+- Add retry logic — DONE
+- Configure connection pooling — DONE
 - Make decryption async
 
 **For Best Practices (Minor):**

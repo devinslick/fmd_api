@@ -53,7 +53,14 @@ class FmdClient:
         backoff_base: float = 0.5,
         backoff_max: float = 10.0,
         jitter: bool = True,
+        ssl: Optional[Any] = None,
+        conn_limit: Optional[int] = None,
+        conn_limit_per_host: Optional[int] = None,
+        keepalive_timeout: Optional[float] = None,
     ):
+        # Enforce HTTPS only (FindMyDevice always uses TLS)
+        if base_url.lower().startswith("http://"):
+            raise ValueError("HTTPS is required for FmdClient base_url; plain HTTP is not allowed.")
         self.base_url = base_url.rstrip('/')
         self.session_duration = session_duration
         self.cache_ttl = cache_ttl
@@ -62,6 +69,13 @@ class FmdClient:
         self.backoff_base = float(backoff_base)
         self.backoff_max = float(backoff_max)
         self.jitter = bool(jitter)
+
+        # Connection/session configuration
+        # ssl can be: None (default validation), False (disable verification), or an SSLContext
+        self._ssl = ssl
+        self._conn_limit = conn_limit
+        self._conn_limit_per_host = conn_limit_per_host
+        self._keepalive_timeout = keepalive_timeout
 
         self._fmd_id: Optional[str] = None
         self._password: Optional[str] = None
@@ -88,17 +102,46 @@ class FmdClient:
         session_duration: int = 3600,
         *,
         cache_ttl: int = 30,
-        timeout: float = 30.0
+        timeout: float = 30.0,
+        ssl: Optional[Any] = None,
+        conn_limit: Optional[int] = None,
+        conn_limit_per_host: Optional[int] = None,
+        keepalive_timeout: Optional[float] = None,
     ):
-        inst = cls(base_url, session_duration, cache_ttl=cache_ttl, timeout=timeout)
+        inst = cls(
+            base_url,
+            session_duration,
+            cache_ttl=cache_ttl,
+            timeout=timeout,
+            ssl=ssl,
+            conn_limit=conn_limit,
+            conn_limit_per_host=conn_limit_per_host,
+            keepalive_timeout=keepalive_timeout,
+        )
         inst._fmd_id = fmd_id
         inst._password = password
-        await inst.authenticate(fmd_id, password, session_duration)
+        try:
+            await inst.authenticate(fmd_id, password, session_duration)
+        except Exception:
+            # Ensure we don't leak a ClientSession if auth fails mid-creation
+            await inst.close()
+            raise
         return inst
 
     async def _ensure_session(self) -> None:
         if self._session is None or self._session.closed:
-            self._session = aiohttp.ClientSession()
+            connector_kwargs = {}
+            if self._ssl is not None:
+                connector_kwargs["ssl"] = self._ssl
+            if self._conn_limit is not None:
+                connector_kwargs["limit"] = self._conn_limit
+            if self._conn_limit_per_host is not None:
+                connector_kwargs["limit_per_host"] = self._conn_limit_per_host
+            if self._keepalive_timeout is not None:
+                connector_kwargs["keepalive_timeout"] = self._keepalive_timeout
+
+            connector = aiohttp.TCPConnector(**connector_kwargs)
+            self._session = aiohttp.ClientSession(connector=connector)
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
@@ -275,14 +318,18 @@ class FmdClient:
                             # server sometimes reports wrong content-type -> force JSON parse
                             try:
                                 json_data = await resp.json(content_type=None)
-                                log.debug(f"{endpoint} JSON response: {json_data}")
+                                # Sanitize: don't log full JSON which may contain tokens/sensitive data
+                                if log.isEnabledFor(logging.DEBUG):
+                                    # Log safe metadata only
+                                    log.debug(f"{endpoint} JSON response received with keys: {list(json_data.keys()) if isinstance(json_data, dict) else 'non-dict'}")
                                 return json_data["Data"]
                             except (KeyError, ValueError, json.JSONDecodeError) as e:
                                 # fall back to text
                                 log.debug(f"{endpoint} JSON parsing failed ({e}), trying as text")
                                 text_data = await resp.text()
                                 if text_data:
-                                    log.debug(f"{endpoint} first 200 chars: {text_data[:200]}")
+                                    # Sanitize: avoid logging response bodies that may contain tokens
+                                    log.debug(f"{endpoint} text response received, length: {len(text_data)}")
                                 else:
                                     log.warning(f"{endpoint} returned EMPTY response body")
                                 return text_data
@@ -542,6 +589,7 @@ class FmdClient:
             hashes.SHA256()
         )
         signature_b64 = base64.b64encode(signature).decode('utf-8').rstrip('=')
+        # Sanitize: don't log signature which could be replayed
 
         try:
             await self._make_api_request(
@@ -612,8 +660,17 @@ class FmdClient:
 
 
 # -------------------------
-# Internal helpers for retry/backoff (module-level)
+# Internal helpers for retry/backoff and logging (module-level)
 # -------------------------
+def _mask_token(token: Optional[str], show_chars: int = 8) -> str:
+    """Mask sensitive tokens for logging, showing only first N chars."""
+    if not token:
+        return "<none>"
+    if len(token) <= show_chars:
+        return "***"
+    return f"{token[:show_chars]}...***"
+
+
 def _compute_backoff(base: float, attempt: int, max_delay: float, jitter: bool) -> float:
     delay = min(max_delay, base * (2 ** attempt))
     if jitter:

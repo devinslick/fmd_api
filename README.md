@@ -40,6 +40,64 @@ async def main():
 asyncio.run(main())
 ```
 
+### TLS and self-signed certificates
+
+Find My Device always requires HTTPS; plain HTTP is not allowed by this client. If you need to connect to a server with a self-signed certificate, you have two options:
+
+- Preferred (secure): provide a custom SSLContext that trusts your CA or certificate
+- Last resort (not for production): disable certificate validation explicitly
+
+Examples:
+
+```python
+import ssl
+from fmd_api import FmdClient
+
+# 1) Custom CA bundle / pinned cert (recommended)
+ctx = ssl.create_default_context()
+ctx.load_verify_locations(cafile="/path/to/your/ca.pem")
+
+# Via constructor
+client = FmdClient("https://fmd.example.com", ssl=ctx)
+
+# Or via factory
+# async with await FmdClient.create("https://fmd.example.com", "user", "pass", ssl=ctx) as client:
+
+# 2) Disable verification (development only)
+insecure_client = FmdClient("https://fmd.example.com", ssl=False)
+```
+
+Notes:
+- HTTP (http://) is rejected. Use only HTTPS URLs.
+- Prefer a custom SSLContext over disabling verification.
+- For higher security, consider pinning the server cert in your context.
+
+> Warning
+>
+> Passing `ssl=False` disables TLS certificate validation and should only be used in development. For production, use a custom `ssl.SSLContext` that trusts your CA/certificate or pin the server certificate. The client enforces HTTPS and rejects `http://` URLs.
+
+#### Pinning the exact server certificate (recommended for self-signed)
+
+If you're using a self-signed certificate and want to pin to that exact cert, load the server's PEM (or DER) directly into an SSLContext. This ensures only that certificate (or its CA) is trusted.
+
+```python
+import ssl
+from fmd_api import FmdClient
+
+# Export your server's certificate to PEM (e.g., server-cert.pem)
+ctx = ssl.create_default_context()
+ctx.verify_mode = ssl.CERT_REQUIRED
+ctx.check_hostname = True  # keep hostname verification when possible
+ctx.load_verify_locations(cafile="/path/to/server-cert.pem")
+
+client = FmdClient("https://fmd.example.com", ssl=ctx)
+# async with await FmdClient.create("https://fmd.example.com", "user", "pass", ssl=ctx) as client:
+```
+
+Tips:
+- If the server cert changes, pinning will fail until you update the PEM.
+- For intermediate/CA signing chains, prefer pinning a private CA instead of the leaf.
+
 ## What’s in the box
 
 - `FmdClient` (primary API)
