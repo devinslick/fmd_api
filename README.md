@@ -5,8 +5,6 @@
 
 Modern, async Python client for the open‑source FMD (Find My Device) server. It handles authentication, key management, encrypted data decryption, location/picture retrieval, and common device commands with safe, validated helpers.
 
-This is the v2 rewrite. The legacy, single‑file module (FmdApi in fmd_api.py) has been replaced by a proper package with clear classes and typed methods.
-
 ## Install
 
 - Requires Python 3.8+
