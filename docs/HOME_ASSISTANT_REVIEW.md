@@ -67,7 +67,13 @@ async def _make_api_request(self, ..., timeout: int = 30):
 
 **HA Rationale:** Only stable, released versions accepted as integration dependencies.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Implemented configurable retry policy in `FmdClient._make_api_request()`
+- Handles 429 with `Retry-After` header and exponential backoff with jitter
+- Retries transient 5xx (500/502/503/504) and connection errors
+- Avoids unsafe retries for `/api/v1/command` POST requests
+- Configurable via constructor: `max_retries`, `backoff_base`, `backoff_max`, `jitter`
+- Added unit tests for 429 + Retry-After and 500 -> success flows
 
 ---
 
@@ -147,7 +153,13 @@ async with await FmdClient.create(...) as client:
 
 **HA Rationale:** Context managers are the Python standard for resource management. HA prefers libraries that follow this pattern.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Implemented `__aenter__` and `__aexit__` on `FmdClient`
+- Usage supported:
+    - `async with FmdClient(base_url) as client:`
+    - `async with await FmdClient.create(base_url, fmd_id, password) as client:`
+- On exit, aiohttp session is closed automatically via `close()`
+- Added unit tests verifying auto-close behavior
 
 ---
 

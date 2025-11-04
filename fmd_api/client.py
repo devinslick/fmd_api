@@ -15,9 +15,11 @@ This module implements:
 from __future__ import annotations
 
 import base64
+import asyncio
 import json
 import logging
 import time
+import random
 from typing import Optional, List, Any
 
 import aiohttp
@@ -40,11 +42,26 @@ log = logging.getLogger(__name__)
 
 
 class FmdClient:
-    def __init__(self, base_url: str, session_duration: int = 3600, *, cache_ttl: int = 30, timeout: float = 30.0):
+    def __init__(
+        self,
+        base_url: str,
+        session_duration: int = 3600,
+        *,
+        cache_ttl: int = 30,
+        timeout: float = 30.0,
+        max_retries: int = 3,
+        backoff_base: float = 0.5,
+        backoff_max: float = 10.0,
+        jitter: bool = True,
+    ):
         self.base_url = base_url.rstrip('/')
         self.session_duration = session_duration
         self.cache_ttl = cache_ttl
         self.timeout = timeout  # default timeout for all HTTP requests (seconds)
+        self.max_retries = max(0, int(max_retries))
+        self.backoff_base = float(backoff_base)
+        self.backoff_max = float(backoff_max)
+        self.jitter = bool(jitter)
 
         self._fmd_id: Optional[str] = None
         self._password: Optional[str] = None
@@ -52,6 +69,15 @@ class FmdClient:
         self.private_key = None  # cryptography private key object
 
         self._session: Optional[aiohttp.ClientSession] = None
+
+    # -------------------------
+    # Async context manager
+    # -------------------------
+    async def __aenter__(self) -> "FmdClient":
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
 
     @classmethod
     async def create(
@@ -180,7 +206,8 @@ class FmdClient:
     # HTTP helper
     # -------------------------
     async def _make_api_request(self, method: str, endpoint: str, payload: Any,
-                                stream: bool = False, expect_json: bool = True, retry_auth: bool = True, timeout: Optional[float] = None):
+                                stream: bool = False, expect_json: bool = True, retry_auth: bool = True,
+                                timeout: Optional[float] = None, max_retries: Optional[int] = None):
         """
         Makes an API request and returns Data or text depending on expect_json/stream.
         Mirrors get_all_locations/_make_api_request logic from original file (including 401 re-auth).
@@ -188,53 +215,101 @@ class FmdClient:
         url = self.base_url + endpoint
         await self._ensure_session()
         req_timeout = aiohttp.ClientTimeout(total=timeout if timeout is not None else self.timeout)
-        try:
-            async with self._session.request(method, url, json=payload, timeout=req_timeout) as resp:
-                # Handle 401 -> re-authenticate once
-                if resp.status == 401 and retry_auth and self._fmd_id and self._password:
-                    log.info("Received 401 Unauthorized, re-authenticating...")
-                    await self.authenticate(
-                        self._fmd_id, self._password, self.session_duration)
-                    payload["IDT"] = self.access_token
-                    return await self._make_api_request(
-                        method, endpoint, payload, stream, expect_json,
-                        retry_auth=False, timeout=timeout)
 
-                resp.raise_for_status()
-                log.debug(
-                    f"{endpoint} response - status: {resp.status}, "
-                    f"content-type: {resp.content_type}, "
-                    f"content-length: {resp.content_length}")
+        # Determine retry policy
+        attempts_left = self.max_retries if max_retries is None else max(0, int(max_retries))
 
-                if not stream:
-                    if expect_json:
-                        # server sometimes reports wrong content-type -> force JSON parse
-                        try:
-                            json_data = await resp.json(content_type=None)
-                            log.debug(f"{endpoint} JSON response: {json_data}")
-                            return json_data["Data"]
-                        except (KeyError, ValueError, json.JSONDecodeError) as e:
-                            # fall back to text
-                            log.debug(f"{endpoint} JSON parsing failed ({e}), trying as text")
+        # Avoid unsafe retries for commands unless it's a 401 (handled separately) or 429 with Retry-After
+        is_command = endpoint.rstrip('/').endswith('/api/v1/command')
+
+        backoff_attempt = 0
+        while True:
+            try:
+                async with self._session.request(method, url, json=payload, timeout=req_timeout) as resp:
+                    # Handle 401 -> re-authenticate once
+                    if resp.status == 401 and retry_auth and self._fmd_id and self._password:
+                        log.info("Received 401 Unauthorized, re-authenticating...")
+                        await self.authenticate(
+                            self._fmd_id, self._password, self.session_duration)
+                        payload["IDT"] = self.access_token
+                        return await self._make_api_request(
+                            method, endpoint, payload, stream, expect_json,
+                            retry_auth=False, timeout=timeout, max_retries=attempts_left)
+
+                    # Rate limit handling (429)
+                    if resp.status == 429:
+                        if attempts_left <= 0:
+                            # Exhausted retries
+                            body_text = await _safe_read_text(resp)
+                            raise FmdApiException(f"Rate limited (429) and retries exhausted. Body={body_text[:200] if body_text else ''}")
+                        retry_after = resp.headers.get('Retry-After')
+                        delay = _parse_retry_after(retry_after)
+                        if delay is None:
+                            delay = _compute_backoff(self.backoff_base, backoff_attempt, self.backoff_max, self.jitter)
+                        log.warning(f"Received 429 Too Many Requests. Sleeping {delay:.2f}s before retrying...")
+                        attempts_left -= 1
+                        backoff_attempt += 1
+                        await asyncio.sleep(delay)
+                        continue
+
+                    # Transient server errors -> retry (except for unsafe command POSTs)
+                    if resp.status in (500, 502, 503, 504) and not (is_command and method.upper() == 'POST'):
+                        if attempts_left > 0:
+                            delay = _compute_backoff(self.backoff_base, backoff_attempt, self.backoff_max, self.jitter)
+                            log.warning(f"Server error {resp.status}. Retrying in {delay:.2f}s ({attempts_left} retries left)...")
+                            attempts_left -= 1
+                            backoff_attempt += 1
+                            await asyncio.sleep(delay)
+                            continue
+
+                    # For all other statuses, raise for non-2xx
+                    resp.raise_for_status()
+
+                    log.debug(
+                        f"{endpoint} response - status: {resp.status}, "
+                        f"content-type: {resp.content_type}, "
+                        f"content-length: {resp.content_length}")
+
+                    if not stream:
+                        if expect_json:
+                            # server sometimes reports wrong content-type -> force JSON parse
+                            try:
+                                json_data = await resp.json(content_type=None)
+                                log.debug(f"{endpoint} JSON response: {json_data}")
+                                return json_data["Data"]
+                            except (KeyError, ValueError, json.JSONDecodeError) as e:
+                                # fall back to text
+                                log.debug(f"{endpoint} JSON parsing failed ({e}), trying as text")
+                                text_data = await resp.text()
+                                if text_data:
+                                    log.debug(f"{endpoint} first 200 chars: {text_data[:200]}")
+                                else:
+                                    log.warning(f"{endpoint} returned EMPTY response body")
+                                return text_data
+                        else:
                             text_data = await resp.text()
-                            if text_data:
-                                log.debug(f"{endpoint} first 200 chars: {text_data[:200]}")
-                            else:
-                                log.warning(f"{endpoint} returned EMPTY response body")
+                            log.debug(f"{endpoint} text response length: {len(text_data)}")
                             return text_data
                     else:
-                        text_data = await resp.text()
-                        log.debug(f"{endpoint} text response length: {len(text_data)}")
-                        return text_data
-                else:
-                    # Return the aiohttp response for streaming consumers
-                    return resp
-        except aiohttp.ClientError as e:
-            log.error(f"API request failed for {endpoint}: {e}")
-            raise FmdApiException(f"API request failed for {endpoint}: {e}") from e
-        except (KeyError, ValueError) as e:
-            log.error(f"Failed to parse server response for {endpoint}: {e}")
-            raise FmdApiException(f"Failed to parse server response for {endpoint}: {e}") from e
+                        # Return the aiohttp response for streaming consumers
+                        return resp
+            except aiohttp.ClientConnectionError as e:
+                # Transient connection issues -> retry if allowed (avoid unsafe command repeats)
+                if attempts_left > 0 and not (is_command and method.upper() == 'POST'):
+                    delay = _compute_backoff(self.backoff_base, backoff_attempt, self.backoff_max, self.jitter)
+                    log.warning(f"Connection error calling {endpoint}: {e}. Retrying in {delay:.2f}s...")
+                    attempts_left -= 1
+                    backoff_attempt += 1
+                    await asyncio.sleep(delay)
+                    continue
+                log.error(f"API request failed for {endpoint}: {e}")
+                raise FmdApiException(f"API request failed for {endpoint}: {e}") from e
+            except aiohttp.ClientError as e:
+                log.error(f"API request failed for {endpoint}: {e}")
+                raise FmdApiException(f"API request failed for {endpoint}: {e}") from e
+            except (KeyError, ValueError) as e:
+                log.error(f"Failed to parse server response for {endpoint}: {e}")
+                raise FmdApiException(f"Failed to parse server response for {endpoint}: {e}") from e
 
     # -------------------------
     # Location / picture access
@@ -534,3 +609,35 @@ class FmdClient:
         command = "camera front" if camera == "front" else "camera back"
         log.info(f"Requesting picture from {camera} camera")
         return await self.send_command(command)
+
+
+# -------------------------
+# Internal helpers for retry/backoff (module-level)
+# -------------------------
+def _compute_backoff(base: float, attempt: int, max_delay: float, jitter: bool) -> float:
+    delay = min(max_delay, base * (2 ** attempt))
+    if jitter:
+        # Full jitter: random between 0 and delay
+        return random.uniform(0, delay)
+    return delay
+
+
+def _parse_retry_after(retry_after_header: Optional[str]) -> Optional[float]:
+    """Parse Retry-After header. Supports seconds; returns None if not usable."""
+    if not retry_after_header:
+        return None
+    try:
+        seconds = int(retry_after_header.strip())
+        if seconds < 0:
+            return None
+        return float(seconds)
+    except Exception:
+        # Parsing HTTP-date would require email.utils; skip and return None
+        return None
+
+
+async def _safe_read_text(resp: aiohttp.ClientResponse) -> Optional[str]:
+    try:
+        return await resp.text()
+    except Exception:
+        return None

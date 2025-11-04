@@ -793,3 +793,101 @@ async def test_timeout_configuration():
     await client2.close()
     await client3.close()
     await client4.close()
+
+
+@pytest.mark.asyncio
+async def test_async_context_manager_direct():
+    """FmdClient supports async with and auto-closes session."""
+    client = FmdClient("https://fmd.example.com")
+    # Create session inside context and ensure it closes after
+    async with client as c:
+        assert c is client
+        await c._ensure_session()
+        assert c._session is not None and not c._session.closed
+    # After context exit, session should be closed and cleared
+    assert client._session is None
+
+
+@pytest.mark.asyncio
+async def test_async_context_manager_with_create(monkeypatch):
+    """Using async with await FmdClient.create(...) should auto-close session."""
+    async def fake_authenticate(self, fmd_id, password, session_duration):
+        # Minimal stub: set access_token without network
+        self._fmd_id = fmd_id
+        self._password = password
+        self.access_token = "token"
+
+    monkeypatch.setattr(FmdClient, "authenticate", fake_authenticate)
+
+    client = await FmdClient.create("https://fmd.example.com", "id", "pw")
+    async with client as c:
+        await c._ensure_session()
+        assert c._session is not None and not c._session.closed
+    assert client._session is None
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_retry_with_retry_after(monkeypatch):
+    """Ensure 429 triggers sleep using Retry-After and then succeeds."""
+    client = FmdClient("https://fmd.example.com", max_retries=2)
+    client.access_token = "token"
+
+    slept = {"calls": []}
+
+    async def fake_sleep(seconds):
+        slept["calls"].append(seconds)
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+
+    await client._ensure_session()
+    with aioresponses() as m:
+        # First call: 429 with Retry-After: 1, then success
+        m.put(
+            "https://fmd.example.com/api/v1/locationDataSize",
+            status=429,
+            headers={"Retry-After": "1"},
+        )
+        m.put(
+            "https://fmd.example.com/api/v1/locationDataSize",
+            payload={"Data": "0"},
+        )
+
+        try:
+            locs = await client.get_locations()
+            assert locs == []
+            # We should have slept once for ~1 second
+            assert len(slept["calls"]) == 1
+            # Allow a small tolerance due to float conversion
+            assert abs(slept["calls"][0] - 1.0) < 0.01
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_server_error_retry_then_success(monkeypatch):
+    """Ensure 500 triggers exponential backoff retry and then success."""
+    client = FmdClient("https://fmd.example.com", max_retries=2, backoff_base=0.1, jitter=False)
+    client.access_token = "token"
+
+    slept = {"calls": []}
+
+    async def fake_sleep(seconds):
+        slept["calls"].append(seconds)
+        return None
+
+    monkeypatch.setattr("asyncio.sleep", fake_sleep)
+
+    await client._ensure_session()
+    with aioresponses() as m:
+        # First attempt 500, second attempt 200 with Data=0
+        m.put("https://fmd.example.com/api/v1/locationDataSize", status=500)
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "0"})
+
+        try:
+            locs = await client.get_locations()
+            assert locs == []
+            # One backoff sleep, base=0.1, attempt0 -> 0.1 seconds when no jitter
+            assert slept["calls"] == [0.1]
+        finally:
+            await client.close()

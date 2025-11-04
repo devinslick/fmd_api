@@ -24,8 +24,8 @@ import asyncio, json
 from fmd_api import FmdClient
 
 async def main():
-    client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
-
+  # Recommended: async context manager auto-closes session
+  async with await FmdClient.create("https://fmd.example.com", "alice", "secret") as client:
     # Request a fresh GPS fix and wait a bit on your side
     await client.request_location("gps")
 
@@ -36,8 +36,6 @@ async def main():
 
     # Take a picture (validated helper)
     await client.take_picture("front")
-
-    await client.close()
 
 asyncio.run(main())
 ```
