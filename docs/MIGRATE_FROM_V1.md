@@ -1,4 +1,4 @@
-# Migrating from fmd_api v1 to v2```markdown
+# Migrating from fmd_api v1 to v2
 
 # Migrating from fmd_api v1 (module style) to v2 (FmdClient + Device)
 

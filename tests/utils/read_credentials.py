@@ -24,8 +24,11 @@ def read_credentials(path: Optional[Union[str, Path]] = None) -> Dict[str, str]:
             if "=" in ln:
                 k, v = ln.split("=", 1)
                 creds[k.strip()] = v.strip()
-    # fallback to environment for keys not provided
+    # Fallback to environment for keys not provided.
+    # Only accept non-empty values to avoid silently using empty strings.
     for k in ("BASE_URL", "FMD_ID", "PASSWORD", "DEVICE_ID"):
-        if k not in creds and os.getenv(k):
-            creds[k] = os.getenv(k)
+        if k not in creds:
+            val = os.getenv(k)
+            if val:  # skip None and empty strings
+                creds[k] = val
     return creds

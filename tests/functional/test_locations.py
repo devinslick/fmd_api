@@ -25,8 +25,9 @@ async def main():
     if len(sys.argv) > 1:
         try:
             num = int(sys.argv[1])
-        except BaseException:
-            pass
+        except (ValueError, TypeError):
+            # Ignore invalid CLI value; keep default of -1 (fetch all)
+            num = -1
     from fmd_api import FmdClient
 
     client = await FmdClient.create(creds["BASE_URL"], creds["FMD_ID"], creds["PASSWORD"])
