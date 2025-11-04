@@ -21,12 +21,13 @@ import json
 import logging
 import time
 import random
-from typing import Optional, List, Any
+from typing import Optional, List, Any, cast
 
 import aiohttp
 from argon2.low_level import hash_secret_raw, Type
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .helpers import _pad_base64
@@ -81,7 +82,7 @@ class FmdClient:
         self._fmd_id: Optional[str] = None
         self._password: Optional[str] = None
         self.access_token: Optional[str] = None
-        self.private_key = None  # cryptography private key object
+        self.private_key: Optional[RSAPrivateKey] = None  # cryptography private key object
 
         self._session: Optional[aiohttp.ClientSession] = None
 
@@ -209,11 +210,11 @@ class FmdClient:
         aesgcm = AESGCM(aes_key)
         return aesgcm.decrypt(iv, ciphertext, None)
 
-    def _load_private_key_from_bytes(self, privkey_bytes: bytes):
+    def _load_private_key_from_bytes(self, privkey_bytes: bytes) -> RSAPrivateKey:
         try:
-            return serialization.load_pem_private_key(privkey_bytes, password=None)
+            return cast(RSAPrivateKey, serialization.load_pem_private_key(privkey_bytes, password=None))
         except ValueError:
-            return serialization.load_der_private_key(privkey_bytes, password=None)
+            return cast(RSAPrivateKey, serialization.load_der_private_key(privkey_bytes, password=None))
 
     # -------------------------
     # Decryption
@@ -237,7 +238,10 @@ class FmdClient:
         session_key_packet = blob[:RSA_KEY_SIZE_BYTES]
         iv = blob[RSA_KEY_SIZE_BYTES : RSA_KEY_SIZE_BYTES + AES_GCM_IV_SIZE_BYTES]
         ciphertext = blob[RSA_KEY_SIZE_BYTES + AES_GCM_IV_SIZE_BYTES :]
-        session_key = self.private_key.decrypt(
+        key = self.private_key
+        if key is None:
+            raise FmdApiException("Private key not loaded. Call authenticate() first.")
+        session_key = key.decrypt(
             session_key_packet,
             padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None),
         )
@@ -264,6 +268,8 @@ class FmdClient:
         """
         url = self.base_url + endpoint
         await self._ensure_session()
+        session = self._session
+        assert session is not None  # for type checker; ensured by _ensure_session
         req_timeout = aiohttp.ClientTimeout(total=timeout if timeout is not None else self.timeout)
 
         # Determine retry policy
@@ -275,7 +281,7 @@ class FmdClient:
         backoff_attempt = 0
         while True:
             try:
-                async with self._session.request(method, url, json=payload, timeout=req_timeout) as resp:
+                async with session.request(method, url, json=payload, timeout=req_timeout) as resp:
                     # Handle 401 -> re-authenticate once
                     if resp.status == 401 and retry_auth and self._fmd_id and self._password:
                         log.info("Received 401 Unauthorized, re-authenticating...")
@@ -453,7 +459,9 @@ class FmdClient:
         req_timeout = aiohttp.ClientTimeout(total=timeout if timeout is not None else self.timeout)
         try:
             await self._ensure_session()
-            async with self._session.put(
+            session = self._session
+            assert session is not None
+            async with session.put(
                 f"{self.base_url}/api/v1/pictures", json={"IDT": self.access_token, "Data": ""}, timeout=req_timeout
             ) as resp:
                 resp.raise_for_status()
@@ -601,7 +609,10 @@ class FmdClient:
         unix_time_ms = int(time.time() * 1000)
         message_to_sign = f"{unix_time_ms}:{command}"
         message_bytes = message_to_sign.encode("utf-8")
-        signature = self.private_key.sign(
+        key = self.private_key
+        if key is None:
+            raise FmdApiException("Private key not loaded. Call authenticate() first.")
+        signature = key.sign(
             message_bytes, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32), hashes.SHA256()
         )
         signature_b64 = base64.b64encode(signature).decode("utf-8").rstrip("=")

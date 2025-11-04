@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any
 class Location:
     lat: float
     lon: float
-    timestamp: datetime
+    timestamp: Optional[datetime]
     accuracy_m: Optional[float] = None
     altitude_m: Optional[float] = None
     speed_m_s: Optional[float] = None

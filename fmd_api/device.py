@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional, AsyncIterator, List
+from typing import Optional, AsyncIterator, List, Dict, Any
 
 from .models import Location, PhotoResult
 from .exceptions import OperationError
@@ -24,10 +24,10 @@ def _parse_location_blob(blob_b64: str) -> Location:
 
 
 class Device:
-    def __init__(self, client: FmdClient, fmd_id: str, raw: dict = None):
+    def __init__(self, client: FmdClient, fmd_id: str, raw: Optional[Dict[str, Any]] = None):
         self.client = client
         self.id = fmd_id
-        self.raw = raw or {}
+        self.raw: Dict[str, Any] = raw or {}
         self.name = self.raw.get("name")
         self.cached_location: Optional[Location] = None
         self._last_refresh = None
