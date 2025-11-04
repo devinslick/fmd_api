@@ -5,10 +5,11 @@ Place credentials.txt in tests/utils/ or set environment variables.
 """
 
 from pathlib import Path
+from typing import Optional, Union, Dict
 import os
 
 
-def read_credentials(path: str | Path = None) -> dict:
+def read_credentials(path: Optional[Union[str, Path]] = None) -> Dict[str, str]:
     """Return dict of credentials from the given file. Falls back to env vars if not present."""
     creds = {}
     if path is None:
