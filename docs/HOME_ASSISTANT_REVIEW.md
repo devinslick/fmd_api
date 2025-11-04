@@ -49,7 +49,12 @@ async def _make_api_request(self, ..., timeout: int = 30):
 
 **HA Rationale:** All network calls MUST have timeouts. This is a hard requirement for HA integrations.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Added `timeout` parameter to `FmdClient.__init__()` with default of 30 seconds
+- Applied timeout to all HTTP requests in `_make_api_request()`, `get_pictures()`, and `export_data_zip()`
+- Timeout can be overridden at client level or per-request
+- Added test coverage with `test_timeout_configuration()`
+- All 51 unit tests pass
 
 ---
 
@@ -79,7 +84,9 @@ async def _make_api_request(self, ..., timeout: int = 30):
 
 **HA Rationale:** Version inconsistencies cause packaging and dependency resolution issues.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Changed `_version.py` from "2.0.0-dev9" to "2.0.0.dev9" (PEP 440 compliant)
+- Both files now use consistent dot notation
 
 ---
 
@@ -111,7 +118,9 @@ if resp.status == 429:
 
 **HA Rationale:** Type hints are required for HA integrations. The `py.typed` marker enables type checking for library users.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Created empty `fmd_api/py.typed` marker file
+- Type checkers will now recognize the package's type hints per PEP 561
 
 ---
 

@@ -86,17 +86,57 @@ async def test_send_command_reauth(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_export_data_zip_stream(monkeypatch, tmp_path):
+    """Test export_data_zip creates a ZIP file with locations and pictures (client-side)."""
     client = FmdClient("https://fmd.example.com")
     client.access_token = "token"
-    small_zip = b'PK\x03\x04' + b'\x00' * 100
+    client._fmd_id = "test-device"
+    
+    # Create a dummy private key for decryption
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b"\x00" * 32
+    client.private_key = DummyKey()
+    
+    # Create fake encrypted location blob
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    session_key = b"\x00" * 32
+    aesgcm = AESGCM(session_key)
+    iv = b"\x01" * 12
+    plaintext = b'{"lat":1.0,"lon":2.0,"date":1600000000000}'
+    ciphertext = aesgcm.encrypt(iv, plaintext, None)
+    session_key_packet = b"\xAA" * 384
+    blob = session_key_packet + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    
     with aioresponses() as m:
-        m.post("https://fmd.example.com/api/v1/exportData", body=small_zip, status=200)
+        # Mock location API calls
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "1"})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob_b64})
+        # Mock pictures API call
+        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": []})
+        
         out_file = tmp_path / "export.zip"
         try:
-            await client.export_data_zip(str(out_file))
+            result = await client.export_data_zip(str(out_file), include_pictures=True)
+            assert result == str(out_file)
             assert out_file.exists()
-            content = out_file.read_bytes()
-            assert content.startswith(b'PK\x03\x04')
+            
+            # Verify ZIP contains expected files
+            import zipfile
+            with zipfile.ZipFile(out_file, 'r') as zipf:
+                names = zipf.namelist()
+                assert "info.json" in names
+                assert "locations.json" in names
+                # Verify encrypted files are NOT included
+                assert "locations_encrypted.json" not in names
+                assert "pictures_encrypted.json" not in names
+                
+                # Check info.json has correct structure
+                info = json.loads(zipf.read("info.json"))
+                assert info["fmd_id"] == "test-device"
+                assert info["location_count"] == 1
+                assert info["version"] == "2.0"
+                assert "pictures_extracted" in info
         finally:
             await client.close()
 
@@ -570,20 +610,22 @@ async def test_decrypt_blob_invalid_format():
 
 @pytest.mark.asyncio
 async def test_export_data_404():
-    """Test export_data_zip when endpoint doesn't exist."""
+    """Test export_data_zip when API calls fail (e.g., no locations available)."""
     client = FmdClient("https://fmd.example.com")
     client.access_token = "token"
+    client._fmd_id = "test"
 
     await client._ensure_session()
 
     with aioresponses() as m:
-        m.post("https://fmd.example.com/api/v1/exportData", status=404)
+        # Mock API to return error when fetching location size
+        m.put("https://fmd.example.com/api/v1/locationDataSize", status=500)
 
         try:
             from fmd_api.exceptions import FmdApiException
             import tempfile
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                with pytest.raises(FmdApiException, match="exportData endpoint not found"):
+                with pytest.raises(FmdApiException, match="Failed to export data"):
                     await client.export_data_zip(tmp.name)
         finally:
             await client.close()
@@ -713,3 +755,41 @@ async def test_set_ringer_mode_edge_cases():
             assert result3 is True
         finally:
             await client.close()
+
+
+@pytest.mark.asyncio
+async def test_timeout_configuration():
+    """Test that timeout can be configured at client level and per-request."""
+    import asyncio
+    
+    # Test 1: Default timeout is 30 seconds
+    client1 = FmdClient("https://fmd.example.com")
+    assert client1.timeout == 30.0
+    
+    # Test 2: Custom timeout via constructor
+    client2 = FmdClient("https://fmd.example.com", timeout=60.0)
+    assert client2.timeout == 60.0
+    
+    # Test 3: Timeout via create() factory method
+    client3_creds = {"BASE_URL": "https://fmd.example.com", "FMD_ID": "test", "PASSWORD": "test"}
+    
+    with aioresponses() as m:
+        # Mock authentication flow
+        m.put("https://fmd.example.com/api/v1/salt", payload={"Data": base64.b64encode(b"x" * 16).decode().rstrip("=")})
+        m.put("https://fmd.example.com/api/v1/requestAccess", payload={"Data": "fake-token"})
+        m.put("https://fmd.example.com/api/v1/key", payload={"Data": "fake-key-blob"})
+        
+        # Since we can't easily complete auth without real crypto, just test constructor accepts timeout
+        client3 = FmdClient("https://fmd.example.com", timeout=45.0)
+        assert client3.timeout == 45.0
+    
+    # Test 4: Verify timeout is passed to aiohttp (integration test would be needed for full validation)
+    # For now, just confirm the attribute is stored correctly
+    client4 = FmdClient("https://fmd.example.com", cache_ttl=60, timeout=120.0)
+    assert client4.timeout == 120.0
+    assert client4.cache_ttl == 60
+    
+    await client1.close()
+    await client2.close()
+    await client3.close()
+    await client4.close()

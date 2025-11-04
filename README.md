@@ -47,7 +47,8 @@ asyncio.run(main())
 - `FmdClient` (primary API)
   - Auth and key retrieval (salt → Argon2id → access token → private key decrypt)
   - Decrypt blobs (RSA‑OAEP wrapped AES‑GCM)
-  - Fetch data: `get_locations`, `get_pictures`, `export_data_zip`
+  - Fetch data: `get_locations`, `get_pictures`
+  - Export: `export_data_zip(out_path)` — client-side packaging of all locations/pictures into ZIP (mimics web UI, no server endpoint)
   - Validated command helpers:
     - `request_location("all|gps|cell|last")`
     - `take_picture("front|back")`

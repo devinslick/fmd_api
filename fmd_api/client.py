@@ -40,10 +40,11 @@ log = logging.getLogger(__name__)
 
 
 class FmdClient:
-    def __init__(self, base_url: str, session_duration: int = 3600, *, cache_ttl: int = 30):
+    def __init__(self, base_url: str, session_duration: int = 3600, *, cache_ttl: int = 30, timeout: float = 30.0):
         self.base_url = base_url.rstrip('/')
         self.session_duration = session_duration
         self.cache_ttl = cache_ttl
+        self.timeout = timeout  # default timeout for all HTTP requests (seconds)
 
         self._fmd_id: Optional[str] = None
         self._password: Optional[str] = None
@@ -53,8 +54,17 @@ class FmdClient:
         self._session: Optional[aiohttp.ClientSession] = None
 
     @classmethod
-    async def create(cls, base_url: str, fmd_id: str, password: str, session_duration: int = 3600):
-        inst = cls(base_url, session_duration)
+    async def create(
+        cls,
+        base_url: str,
+        fmd_id: str,
+        password: str,
+        session_duration: int = 3600,
+        *,
+        cache_ttl: int = 30,
+        timeout: float = 30.0
+    ):
+        inst = cls(base_url, session_duration, cache_ttl=cache_ttl, timeout=timeout)
         inst._fmd_id = fmd_id
         inst._password = password
         await inst.authenticate(fmd_id, password, session_duration)
@@ -170,15 +180,16 @@ class FmdClient:
     # HTTP helper
     # -------------------------
     async def _make_api_request(self, method: str, endpoint: str, payload: Any,
-                                stream: bool = False, expect_json: bool = True, retry_auth: bool = True):
+                                stream: bool = False, expect_json: bool = True, retry_auth: bool = True, timeout: Optional[float] = None):
         """
         Makes an API request and returns Data or text depending on expect_json/stream.
         Mirrors get_all_locations/_make_api_request logic from original file (including 401 re-auth).
         """
         url = self.base_url + endpoint
         await self._ensure_session()
+        req_timeout = aiohttp.ClientTimeout(total=timeout if timeout is not None else self.timeout)
         try:
-            async with self._session.request(method, url, json=payload) as resp:
+            async with self._session.request(method, url, json=payload, timeout=req_timeout) as resp:
                 # Handle 401 -> re-authenticate once
                 if resp.status == 401 and retry_auth and self._fmd_id and self._password:
                     log.info("Received 401 Unauthorized, re-authenticating...")
@@ -187,7 +198,7 @@ class FmdClient:
                     payload["IDT"] = self.access_token
                     return await self._make_api_request(
                         method, endpoint, payload, stream, expect_json,
-                        retry_auth=False)
+                        retry_auth=False, timeout=timeout)
 
                 resp.raise_for_status()
                 log.debug(
@@ -294,13 +305,15 @@ class FmdClient:
 
         return locations
 
-    async def get_pictures(self, num_to_get: int = -1) -> List[Any]:
+    async def get_pictures(self, num_to_get: int = -1, timeout: Optional[float] = None) -> List[Any]:
         """Fetches all or the N most recent picture metadata blobs (raw server response)."""
+        req_timeout = aiohttp.ClientTimeout(total=timeout if timeout is not None else self.timeout)
         try:
             await self._ensure_session()
             async with self._session.put(
                     f"{self.base_url}/api/v1/pictures",
-                    json={"IDT": self.access_token, "Data": ""}) as resp:
+                    json={"IDT": self.access_token, "Data": ""},
+                    timeout=req_timeout) as resp:
                 resp.raise_for_status()
                 json_data = await resp.json()
                 # Extract the Data field if it exists, otherwise use the response as-is
@@ -322,30 +335,118 @@ class FmdClient:
             log.info(f"Found {len(all_pictures)} pictures. Selecting the {num_to_download} most recent.")
             return all_pictures[-num_to_download:][::-1]
 
-    async def export_data_zip(self, out_path: str, session_duration: int = 3600, fallback: bool = True):
-        url = f"{self.base_url}/api/v1/exportData"
+    async def export_data_zip(self, out_path: str, include_pictures: bool = True) -> str:
+        """
+        Export all account data to a ZIP file (client-side packaging).
+        
+        This mimics the FMD web UI's export functionality by fetching all locations
+        and pictures via the existing API endpoints, decrypting them, and packaging
+        them into a user-friendly ZIP file.
+        
+        NOTE: There is no server-side /api/v1/exportData endpoint. This method
+        performs client-side data collection, decryption, and packaging, similar 
+        to how the web UI implements its export feature.
+        
+        ZIP Contents:
+            - info.json: Export metadata (date, device ID, counts)
+            - locations.json: Decrypted location data (human-readable JSON)
+            - pictures/picture_NNNN.jpg: Extracted picture files
+            - pictures/manifest.json: Picture metadata (filename, size, index)
+        
+        Args:
+            out_path: Path where the ZIP file will be saved
+            include_pictures: Whether to include pictures in the export (default: True)
+            
+        Returns:
+            Path to the created ZIP file
+            
+        Raises:
+            FmdApiException: If data fetching or ZIP creation fails
+        """
+        import zipfile
+        from datetime import datetime
+        
         try:
-            await self._ensure_session()
-            # POST with session request; stream the response to file
-            async with self._session.post(url, json={"session": session_duration}) as resp:
-                if resp.status == 404:
-                    raise FmdApiException("exportData endpoint not found (404)")
-                resp.raise_for_status()
-                # stream to file
-                with open(out_path, "wb") as f:
-                    async for chunk in resp.content.iter_chunked(8192):
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                return out_path
-        except aiohttp.ClientResponseError as e:
-            # include server response text for diagnostics
-            try:
-                body = await e.response.text()
-            except Exception:
-                body = "<no body>"
-            raise FmdApiException(f"Failed to export data: {e.status}, body={body}") from e
+            log.info("Starting data export (client-side packaging)...")
+            
+            # Fetch all locations
+            log.info("Fetching all locations...")
+            location_blobs = await self.get_locations(num_to_get=-1, skip_empty=False)
+            
+            # Fetch all pictures if requested
+            picture_blobs = []
+            if include_pictures:
+                log.info("Fetching all pictures...")
+                picture_blobs = await self.get_pictures(num_to_get=-1)
+            
+            # Create ZIP file with exported data
+            log.info(f"Creating export ZIP at {out_path}...")
+            with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # Decrypt and add readable locations
+                decrypted_locations = []
+                if location_blobs:
+                    log.info(f"Decrypting {len(location_blobs)} locations...")
+                    for i, blob in enumerate(location_blobs):
+                        try:
+                            decrypted = self.decrypt_data_blob(blob)
+                            loc_data = json.loads(decrypted)
+                            decrypted_locations.append(loc_data)
+                        except Exception as e:
+                            log.warning(f"Failed to decrypt location {i}: {e}")
+                            decrypted_locations.append({"error": str(e), "index": i})
+                
+                # Decrypt and extract pictures as image files
+                picture_file_list = []
+                if picture_blobs:
+                    log.info(f"Decrypting and extracting {len(picture_blobs)} pictures...")
+                    for i, blob in enumerate(picture_blobs):
+                        try:
+                            decrypted = self.decrypt_data_blob(blob)
+                            # Pictures are double-encoded: decrypt -> base64 string -> image bytes
+                            inner_b64 = decrypted.decode('utf-8').strip()
+                            from .helpers import b64_decode_padded
+                            image_bytes = b64_decode_padded(inner_b64)
+                            
+                            # Determine image format from magic bytes
+                            if image_bytes.startswith(b'\xff\xd8\xff'):
+                                ext = 'jpg'
+                            elif image_bytes.startswith(b'\x89PNG'):
+                                ext = 'png'
+                            else:
+                                ext = 'jpg'  # default to jpg
+                            
+                            filename = f"pictures/picture_{i:04d}.{ext}"
+                            zipf.writestr(filename, image_bytes)
+                            picture_file_list.append({"index": i, "filename": filename, "size": len(image_bytes)})
+                            
+                        except Exception as e:
+                            log.warning(f"Failed to decrypt/extract picture {i}: {e}")
+                            picture_file_list.append({"index": i, "error": str(e)})
+                
+                # Add metadata file (after processing so we have accurate counts)
+                export_info = {
+                    "export_date": datetime.now().isoformat(),
+                    "fmd_id": self._fmd_id,
+                    "location_count": len(location_blobs),
+                    "picture_count": len(picture_blobs),
+                    "pictures_extracted": len([p for p in picture_file_list if "error" not in p]),
+                    "version": "2.0"
+                }
+                zipf.writestr("info.json", json.dumps(export_info, indent=2))
+                
+                # Add locations as readable JSON
+                if decrypted_locations:
+                    zipf.writestr("locations.json", json.dumps(decrypted_locations, indent=2))
+                
+                # Add picture manifest if we extracted any
+                if picture_file_list:
+                    zipf.writestr("pictures/manifest.json", json.dumps(picture_file_list, indent=2))
+            
+            log.info(f"Export completed successfully: {out_path}")
+            return out_path
+            
         except Exception as e:
+            log.error(f"Failed to export data: {e}")
             raise FmdApiException(f"Failed to export data: {e}") from e
 
     # -------------------------
