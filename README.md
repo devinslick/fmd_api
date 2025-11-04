@@ -1,5 +1,8 @@
 # fmd_api: Python client for FMD (Find My Device)
 
+[![Tests](https://github.com/devinslick/fmd_api/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/devinslick/fmd_api/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/devinslick/fmd_api/branch/main/graph/badge.svg?token=8WA2TKXIOW)](https://codecov.io/gh/devinslick/fmd_api)
+
 Modern, async Python client for the open‑source FMD (Find My Device) server. It handles authentication, key management, encrypted data decryption, location/picture retrieval, and common device commands with safe, validated helpers.
 
 This is the v2 rewrite. The legacy, single‑file module (FmdApi in fmd_api.py) has been replaced by a proper package with clear classes and typed methods.

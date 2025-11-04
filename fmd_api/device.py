@@ -3,6 +3,7 @@
 Device implements small helpers that call into FmdClient to perform the same
 operations available in the original module (get locations, take pictures, send commands).
 """
+
 from __future__ import annotations
 
 import json
@@ -57,7 +58,7 @@ class Device:
             heading_deg=loc.get("heading"),
             battery_pct=loc.get("bat"),
             provider=loc.get("provider"),
-            raw=loc
+            raw=loc,
         )
 
     async def get_location(self, *, force: bool = False) -> Optional[Location]:
@@ -93,7 +94,7 @@ class Device:
                     heading_deg=loc.get("heading"),
                     battery_pct=loc.get("bat"),
                     provider=loc.get("provider"),
-                    raw=loc
+                    raw=loc,
                 )
             except Exception as e:
                 # skip invalid blobs but log
@@ -121,7 +122,7 @@ class Device:
         decrypted = self.client.decrypt_data_blob(picture_blob_b64)
         # decrypted is bytes, often containing a base64-encoded image (as text)
         try:
-            inner_b64 = decrypted.decode('utf-8').strip()
+            inner_b64 = decrypted.decode("utf-8").strip()
             image_bytes = b64_decode_padded(inner_b64)
             # timestamp is not standardized in picture payload; attempt to parse JSON if present
             raw_meta = None
@@ -131,11 +132,8 @@ class Device:
                 raw_meta = {"note": "binary image or base64 string; no JSON metadata"}
             # Build PhotoResult; mime type not provided by server so default to image/jpeg
             return PhotoResult(
-                data=image_bytes,
-                mime_type="image/jpeg",
-                timestamp=datetime.now(
-                    timezone.utc),
-                raw=raw_meta)
+                data=image_bytes, mime_type="image/jpeg", timestamp=datetime.now(timezone.utc), raw=raw_meta
+            )
         except Exception as e:
             raise OperationError(f"Failed to decode picture blob: {e}") from e
 

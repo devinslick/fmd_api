@@ -5,6 +5,7 @@ Usage:
 provider: one of all,gps,cell,last (default: all)
 wait_seconds: seconds to wait for the device to respond (default: 30)
 """
+
 import asyncio
 import json
 import sys
@@ -25,6 +26,7 @@ async def main():
     wait = int(sys.argv[2]) if len(sys.argv) > 2 else 30
 
     from fmd_api import FmdClient
+
     client = await FmdClient.create(creds["BASE_URL"], creds["FMD_ID"], creds["PASSWORD"])
     try:
         ok = await client.request_location(provider)
@@ -39,6 +41,7 @@ async def main():
             print("Newest decrypted:", json.dumps(json.loads(dec), indent=2))
     finally:
         await client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

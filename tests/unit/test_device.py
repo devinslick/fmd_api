@@ -15,18 +15,20 @@ async def test_device_refresh_and_get_location(monkeypatch):
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     # Create a simple AES-GCM encrypted location blob (same scheme as client test)
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
-    iv = b'\x02' * 12
+    iv = b"\x02" * 12
     plaintext = b'{"lat":10.0,"lon":20.0,"date":1600000000000,"bat":80}'
     ciphertext = aesgcm.encrypt(iv, plaintext, None)
-    blob = b'\xAA' * 384 + iv + ciphertext
-    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    blob = b"\xaa" * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
 
     client.access_token = "token"
     device = Device(client, "alice")
@@ -50,20 +52,22 @@ async def test_device_fetch_and_download_picture(monkeypatch):
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     # Prepare an "encrypted blob" that after decrypt yields a base64 image string.
     # For test simplicity, we'll make decrypted payload the base64 of b'PNGDATA'
-    inner_image = base64.b64encode(b'PNGDATA').decode('utf-8')
+    inner_image = base64.b64encode(b"PNGDATA").decode("utf-8")
     # Encrypt inner_image using AESGCM with zero key
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
-    iv = b'\x03' * 12
-    ciphertext = aesgcm.encrypt(iv, inner_image.encode('utf-8'), None)
-    blob = b'\xAA' * 384 + iv + ciphertext
-    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    iv = b"\x03" * 12
+    ciphertext = aesgcm.encrypt(iv, inner_image.encode("utf-8"), None)
+    blob = b"\xaa" * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
 
     with aioresponses() as m:
         # get_pictures endpoint returns a JSON list; emulate simple list containing our blob
@@ -75,7 +79,7 @@ async def test_device_fetch_and_download_picture(monkeypatch):
             assert len(pics) == 1
             # download the picture and verify we got PNGDATA bytes
             photo = await device.download_photo(pics[0])
-            assert photo.data == b'PNGDATA'
+            assert photo.data == b"PNGDATA"
             assert photo.mime_type.startswith("image/")
         finally:
             await client.close()
@@ -89,7 +93,8 @@ async def test_device_command_wrappers():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     device = Device(client, "test-device")
@@ -126,7 +131,8 @@ async def test_device_wipe_requires_confirm():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     with aioresponses() as m:
@@ -145,7 +151,8 @@ async def test_device_empty_location():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     client.access_token = "token"
@@ -169,21 +176,23 @@ async def test_device_get_history():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     # Create two location blobs
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
 
     blobs = []
     for i, (lat, lon) in enumerate([(10.0, 20.0), (11.0, 21.0)]):
         iv = bytes([i + 1] * 12)
-        plaintext = json.dumps({"lat": lat, "lon": lon, "date": 1600000000000 + i * 1000, "bat": 80}).encode('utf-8')
+        plaintext = json.dumps({"lat": lat, "lon": lon, "date": 1600000000000 + i * 1000, "bat": 80}).encode("utf-8")
         ciphertext = aesgcm.encrypt(iv, plaintext, None)
-        blob = b'\xAA' * 384 + iv + ciphertext
-        blobs.append(base64.b64encode(blob).decode('utf-8').rstrip('='))
+        blob = b"\xaa" * 384 + iv + ciphertext
+        blobs.append(base64.b64encode(blob).decode("utf-8").rstrip("="))
 
     client.access_token = "token"
     device = Device(client, "test-device")
@@ -212,17 +221,19 @@ async def test_device_force_refresh():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
-    iv = b'\x05' * 12
+    iv = b"\x05" * 12
     plaintext = b'{"lat":15.0,"lon":25.0,"date":1600000000000,"bat":90}'
     ciphertext = aesgcm.encrypt(iv, plaintext, None)
-    blob = b'\xAA' * 384 + iv + ciphertext
-    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    blob = b"\xaa" * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
 
     client.access_token = "token"
     device = Device(client, "test-device")
@@ -257,17 +268,19 @@ async def test_device_cached_location_property():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
-    iv = b'\x06' * 12
+    iv = b"\x06" * 12
     plaintext = b'{"lat":20.0,"lon":30.0,"date":1600000000000,"bat":75}'
     ciphertext = aesgcm.encrypt(iv, plaintext, None)
-    blob = b'\xAA' * 384 + iv + ciphertext
-    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    blob = b"\xaa" * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
 
     client.access_token = "token"
     device = Device(client, "test-device")
@@ -295,17 +308,19 @@ async def test_device_refresh_without_force():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
-    iv = b'\x07' * 12
+    iv = b"\x07" * 12
     plaintext = b'{"lat":25.0,"lon":35.0,"date":1600000000000,"bat":85}'
     ciphertext = aesgcm.encrypt(iv, plaintext, None)
-    blob = b'\xAA' * 384 + iv + ciphertext
-    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    blob = b"\xaa" * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
 
     client.access_token = "token"
     device = Device(client, "test-device")
@@ -335,7 +350,8 @@ async def test_device_picture_commands():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -365,7 +381,8 @@ async def test_device_lock_with_message():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -389,21 +406,24 @@ async def test_device_multiple_history_calls():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
 
     blobs = []
     for i in range(2):
         iv = bytes([i + 10] * 12)
-        plaintext = json.dumps({"lat": float(30 + i), "lon": float(40 + i),
-                               "date": 1600000000000 + i * 1000, "bat": 80}).encode('utf-8')
+        plaintext = json.dumps(
+            {"lat": float(30 + i), "lon": float(40 + i), "date": 1600000000000 + i * 1000, "bat": 80}
+        ).encode("utf-8")
         ciphertext = aesgcm.encrypt(iv, plaintext, None)
-        blob = b'\xAA' * 384 + iv + ciphertext
-        blobs.append(base64.b64encode(blob).decode('utf-8').rstrip('='))
+        blob = b"\xaa" * 384 + iv + ciphertext
+        blobs.append(base64.b64encode(blob).decode("utf-8").rstrip("="))
 
     client.access_token = "token"
     device = Device(client, "test-device")
@@ -457,7 +477,8 @@ async def test_device_wipe_with_confirm():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -481,7 +502,8 @@ async def test_device_ringer_via_client():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -506,7 +528,8 @@ async def test_device_bluetooth_via_client():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -535,7 +558,8 @@ async def test_device_dnd_via_client():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -564,21 +588,24 @@ async def test_device_get_history_with_all_locations():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
 
     blobs = []
     for i in range(3):
         iv = bytes([i + 20] * 12)
-        plaintext = json.dumps({"lat": float(40 + i), "lon": float(50 + i),
-                               "date": 1600000000000 + i * 1000, "bat": 85}).encode('utf-8')
+        plaintext = json.dumps(
+            {"lat": float(40 + i), "lon": float(50 + i), "date": 1600000000000 + i * 1000, "bat": 85}
+        ).encode("utf-8")
         ciphertext = aesgcm.encrypt(iv, plaintext, None)
-        blob = b'\xAA' * 384 + iv + ciphertext
-        blobs.append(base64.b64encode(blob).decode('utf-8').rstrip('='))
+        blob = b"\xaa" * 384 + iv + ciphertext
+        blobs.append(base64.b64encode(blob).decode("utf-8").rstrip("="))
 
     client.access_token = "token"
     device = Device(client, "test-device")
@@ -627,7 +654,8 @@ async def test_device_request_location_via_client():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -652,7 +680,8 @@ async def test_device_get_stats_via_client():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -677,25 +706,27 @@ async def test_device_refresh_updates_cached_location():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
 
     # Create two different blobs
-    iv1 = b'\x30' * 12
+    iv1 = b"\x30" * 12
     plaintext1 = b'{"lat":50.0,"lon":60.0,"date":1600000000000,"bat":90}'
     ciphertext1 = aesgcm.encrypt(iv1, plaintext1, None)
-    blob1 = b'\xAA' * 384 + iv1 + ciphertext1
-    blob1_b64 = base64.b64encode(blob1).decode('utf-8').rstrip('=')
+    blob1 = b"\xaa" * 384 + iv1 + ciphertext1
+    blob1_b64 = base64.b64encode(blob1).decode("utf-8").rstrip("=")
 
-    iv2 = b'\x31' * 12
+    iv2 = b"\x31" * 12
     plaintext2 = b'{"lat":55.0,"lon":65.0,"date":1600000001000,"bat":85}'
     ciphertext2 = aesgcm.encrypt(iv2, plaintext2, None)
-    blob2 = b'\xAA' * 384 + iv2 + ciphertext2
-    blob2_b64 = base64.b64encode(blob2).decode('utf-8').rstrip('=')
+    blob2 = b"\xaa" * 384 + iv2 + ciphertext2
+    blob2_b64 = base64.b64encode(blob2).decode("utf-8").rstrip("=")
 
     client.access_token = "token"
     device = Device(client, "test-device")

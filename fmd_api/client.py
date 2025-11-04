@@ -12,6 +12,7 @@ This module implements:
  - convenience wrappers: request_location, set_bluetooth, set_do_not_disturb,
      set_ringer_mode, get_device_stats, take_picture
 """
+
 from __future__ import annotations
 
 import base64
@@ -61,7 +62,7 @@ class FmdClient:
         # Enforce HTTPS only (FindMyDevice always uses TLS)
         if base_url.lower().startswith("http://"):
             raise ValueError("HTTPS is required for FmdClient base_url; plain HTTP is not allowed.")
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.session_duration = session_duration
         self.cache_ttl = cache_ttl
         self.timeout = timeout  # default timeout for all HTTP requests (seconds)
@@ -173,22 +174,24 @@ class FmdClient:
 
     def _hash_password(self, password: str, salt: str) -> str:
         salt_bytes = base64.b64decode(_pad_base64(salt))
-        password_bytes = (CONTEXT_STRING_LOGIN + password).encode('utf-8')
+        password_bytes = (CONTEXT_STRING_LOGIN + password).encode("utf-8")
         hash_bytes = hash_secret_raw(
-            secret=password_bytes, salt=salt_bytes, time_cost=1,
-            memory_cost=131072, parallelism=4, hash_len=32, type=Type.ID
+            secret=password_bytes,
+            salt=salt_bytes,
+            time_cost=1,
+            memory_cost=131072,
+            parallelism=4,
+            hash_len=32,
+            type=Type.ID,
         )
-        hash_b64 = base64.b64encode(hash_bytes).decode('utf-8').rstrip('=')
+        hash_b64 = base64.b64encode(hash_bytes).decode("utf-8").rstrip("=")
         return f"$argon2id$v=19$m=131072,t=1,p=4${salt}${hash_b64}"
 
     async def _get_salt(self, fmd_id: str) -> str:
         return await self._make_api_request("PUT", "/api/v1/salt", {"IDT": fmd_id, "Data": ""})
 
     async def _get_access_token(self, fmd_id: str, password_hash: str, session_duration: int) -> str:
-        payload = {
-            "IDT": fmd_id, "Data": password_hash,
-            "SessionDurationSeconds": session_duration
-        }
+        payload = {"IDT": fmd_id, "Data": password_hash, "SessionDurationSeconds": session_duration}
         return await self._make_api_request("PUT", "/api/v1/requestAccess", payload)
 
     async def _get_private_key_blob(self) -> str:
@@ -197,12 +200,11 @@ class FmdClient:
     def _decrypt_private_key_blob(self, key_b64: str, password: str) -> bytes:
         key_bytes = base64.b64decode(_pad_base64(key_b64))
         salt = key_bytes[:ARGON2_SALT_LENGTH]
-        iv = key_bytes[ARGON2_SALT_LENGTH:ARGON2_SALT_LENGTH + AES_GCM_IV_SIZE_BYTES]
-        ciphertext = key_bytes[ARGON2_SALT_LENGTH + AES_GCM_IV_SIZE_BYTES:]
-        password_bytes = (CONTEXT_STRING_ASYM_KEY_WRAP + password).encode('utf-8')
+        iv = key_bytes[ARGON2_SALT_LENGTH : ARGON2_SALT_LENGTH + AES_GCM_IV_SIZE_BYTES]
+        ciphertext = key_bytes[ARGON2_SALT_LENGTH + AES_GCM_IV_SIZE_BYTES :]
+        password_bytes = (CONTEXT_STRING_ASYM_KEY_WRAP + password).encode("utf-8")
         aes_key = hash_secret_raw(
-            secret=password_bytes, salt=salt, time_cost=1, memory_cost=131072,
-            parallelism=4, hash_len=32, type=Type.ID
+            secret=password_bytes, salt=salt, time_cost=1, memory_cost=131072, parallelism=4, hash_len=32, type=Type.ID
         )
         aesgcm = AESGCM(aes_key)
         return aesgcm.decrypt(iv, ciphertext, None)
@@ -233,14 +235,11 @@ class FmdClient:
             )
 
         session_key_packet = blob[:RSA_KEY_SIZE_BYTES]
-        iv = blob[RSA_KEY_SIZE_BYTES:RSA_KEY_SIZE_BYTES + AES_GCM_IV_SIZE_BYTES]
-        ciphertext = blob[RSA_KEY_SIZE_BYTES + AES_GCM_IV_SIZE_BYTES:]
+        iv = blob[RSA_KEY_SIZE_BYTES : RSA_KEY_SIZE_BYTES + AES_GCM_IV_SIZE_BYTES]
+        ciphertext = blob[RSA_KEY_SIZE_BYTES + AES_GCM_IV_SIZE_BYTES :]
         session_key = self.private_key.decrypt(
             session_key_packet,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(), label=None
-            )
+            padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None),
         )
         aesgcm = AESGCM(session_key)
         return aesgcm.decrypt(iv, ciphertext, None)
@@ -248,9 +247,17 @@ class FmdClient:
     # -------------------------
     # HTTP helper
     # -------------------------
-    async def _make_api_request(self, method: str, endpoint: str, payload: Any,
-                                stream: bool = False, expect_json: bool = True, retry_auth: bool = True,
-                                timeout: Optional[float] = None, max_retries: Optional[int] = None):
+    async def _make_api_request(
+        self,
+        method: str,
+        endpoint: str,
+        payload: Any,
+        stream: bool = False,
+        expect_json: bool = True,
+        retry_auth: bool = True,
+        timeout: Optional[float] = None,
+        max_retries: Optional[int] = None,
+    ):
         """
         Makes an API request and returns Data or text depending on expect_json/stream.
         Mirrors get_all_locations/_make_api_request logic from original file (including 401 re-auth).
@@ -263,7 +270,7 @@ class FmdClient:
         attempts_left = self.max_retries if max_retries is None else max(0, int(max_retries))
 
         # Avoid unsafe retries for commands unless it's a 401 (handled separately) or 429 with Retry-After
-        is_command = endpoint.rstrip('/').endswith('/api/v1/command')
+        is_command = endpoint.rstrip("/").endswith("/api/v1/command")
 
         backoff_attempt = 0
         while True:
@@ -272,20 +279,28 @@ class FmdClient:
                     # Handle 401 -> re-authenticate once
                     if resp.status == 401 and retry_auth and self._fmd_id and self._password:
                         log.info("Received 401 Unauthorized, re-authenticating...")
-                        await self.authenticate(
-                            self._fmd_id, self._password, self.session_duration)
+                        await self.authenticate(self._fmd_id, self._password, self.session_duration)
                         payload["IDT"] = self.access_token
                         return await self._make_api_request(
-                            method, endpoint, payload, stream, expect_json,
-                            retry_auth=False, timeout=timeout, max_retries=attempts_left)
+                            method,
+                            endpoint,
+                            payload,
+                            stream,
+                            expect_json,
+                            retry_auth=False,
+                            timeout=timeout,
+                            max_retries=attempts_left,
+                        )
 
                     # Rate limit handling (429)
                     if resp.status == 429:
                         if attempts_left <= 0:
                             # Exhausted retries
                             body_text = await _safe_read_text(resp)
-                            raise FmdApiException(f"Rate limited (429) and retries exhausted. Body={body_text[:200] if body_text else ''}")
-                        retry_after = resp.headers.get('Retry-After')
+                            raise FmdApiException(
+                                f"Rate limited (429) and retries exhausted. Body={body_text[:200] if body_text else ''}"
+                            )
+                        retry_after = resp.headers.get("Retry-After")
                         delay = _parse_retry_after(retry_after)
                         if delay is None:
                             delay = _compute_backoff(self.backoff_base, backoff_attempt, self.backoff_max, self.jitter)
@@ -296,10 +311,17 @@ class FmdClient:
                         continue
 
                     # Transient server errors -> retry (except for unsafe command POSTs)
-                    if resp.status in (500, 502, 503, 504) and not (is_command and method.upper() == 'POST'):
+                    if resp.status in (500, 502, 503, 504) and not (
+                        is_command and method.upper() == "POST"
+                    ):
                         if attempts_left > 0:
-                            delay = _compute_backoff(self.backoff_base, backoff_attempt, self.backoff_max, self.jitter)
-                            log.warning(f"Server error {resp.status}. Retrying in {delay:.2f}s ({attempts_left} retries left)...")
+                            delay = _compute_backoff(
+                                self.backoff_base, backoff_attempt, self.backoff_max, self.jitter
+                            )
+                            log.warning(
+                                f"Server error {resp.status}. "
+                                f"Retrying in {delay:.2f}s ({attempts_left} retries left)..."
+                            )
                             attempts_left -= 1
                             backoff_attempt += 1
                             await asyncio.sleep(delay)
@@ -311,7 +333,8 @@ class FmdClient:
                     log.debug(
                         f"{endpoint} response - status: {resp.status}, "
                         f"content-type: {resp.content_type}, "
-                        f"content-length: {resp.content_length}")
+                        f"content-length: {resp.content_length}"
+                    )
 
                     if not stream:
                         if expect_json:
@@ -321,7 +344,12 @@ class FmdClient:
                                 # Sanitize: don't log full JSON which may contain tokens/sensitive data
                                 if log.isEnabledFor(logging.DEBUG):
                                     # Log safe metadata only
-                                    log.debug(f"{endpoint} JSON response received with keys: {list(json_data.keys()) if isinstance(json_data, dict) else 'non-dict'}")
+                                    keys = (
+                                        list(json_data.keys())
+                                        if isinstance(json_data, dict)
+                                        else "non-dict"
+                                    )
+                                    log.debug(f"{endpoint} JSON response received with keys: {keys}")
                                 return json_data["Data"]
                             except (KeyError, ValueError, json.JSONDecodeError) as e:
                                 # fall back to text
@@ -342,7 +370,7 @@ class FmdClient:
                         return resp
             except aiohttp.ClientConnectionError as e:
                 # Transient connection issues -> retry if allowed (avoid unsafe command repeats)
-                if attempts_left > 0 and not (is_command and method.upper() == 'POST'):
+                if attempts_left > 0 and not (is_command and method.upper() == "POST"):
                     delay = _compute_backoff(self.backoff_base, backoff_attempt, self.backoff_max, self.jitter)
                     log.warning(f"Connection error calling {endpoint}: {e}. Retrying in {delay:.2f}s...")
                     attempts_left -= 1
@@ -361,19 +389,15 @@ class FmdClient:
     # -------------------------
     # Location / picture access
     # -------------------------
-    async def get_locations(
-            self, num_to_get: int = -1, skip_empty: bool = True,
-            max_attempts: int = 10) -> List[str]:
+    async def get_locations(self, num_to_get: int = -1, skip_empty: bool = True, max_attempts: int = 10) -> List[str]:
         """
         Fetches all or the N most recent location blobs.
         Returns list of base64-encoded blobs (strings), same as original get_all_locations.
         """
-        log.debug(
-            f"Getting locations, num_to_get={num_to_get}, "
-            f"skip_empty={skip_empty}")
+        log.debug(f"Getting locations, num_to_get={num_to_get}, " f"skip_empty={skip_empty}")
         size_str = await self._make_api_request(
-            "PUT", "/api/v1/locationDataSize",
-            {"IDT": self.access_token, "Data": ""})
+            "PUT", "/api/v1/locationDataSize", {"IDT": self.access_token, "Data": ""}
+        )
         size = int(size_str)
         log.debug(f"Server reports {size} locations available")
         if size == 0:
@@ -387,8 +411,8 @@ class FmdClient:
             for i in indices:
                 log.info(f"  - Downloading location at index {i}...")
                 blob = await self._make_api_request(
-                    "PUT", "/api/v1/location",
-                    {"IDT": self.access_token, "Data": str(i)})
+                    "PUT", "/api/v1/location", {"IDT": self.access_token, "Data": str(i)}
+                )
                 locations.append(blob)
             return locations
         else:
@@ -397,11 +421,10 @@ class FmdClient:
             start_index = size - 1
 
             if skip_empty:
-                indices = range(
-                    start_index, max(-1, start_index - max_attempts), -1)
+                indices = range(start_index, max(-1, start_index - max_attempts), -1)
                 log.info(
-                    f"Will search for {num_to_download} non-empty location(s) "
-                    f"starting from index {start_index}")
+                    f"Will search for {num_to_download} non-empty location(s) " f"starting from index {start_index}"
+                )
             else:
                 end_index = size - num_to_download
                 indices = range(start_index, end_index - 1, -1)
@@ -421,9 +444,7 @@ class FmdClient:
                 log.warning(f"Empty blob received for location index {i}, repr: {repr(blob[:50] if blob else blob)}")
 
         if not locations and num_to_get != -1:
-            log.warning(
-                f"No valid locations found after checking "
-                f"{min(max_attempts, size)} indices")
+            log.warning(f"No valid locations found after checking " f"{min(max_attempts, size)} indices")
 
         return locations
 
@@ -433,9 +454,8 @@ class FmdClient:
         try:
             await self._ensure_session()
             async with self._session.put(
-                    f"{self.base_url}/api/v1/pictures",
-                    json={"IDT": self.access_token, "Data": ""},
-                    timeout=req_timeout) as resp:
+                f"{self.base_url}/api/v1/pictures", json={"IDT": self.access_token, "Data": ""}, timeout=req_timeout
+            ) as resp:
                 resp.raise_for_status()
                 json_data = await resp.json()
                 # Extract the Data field if it exists, otherwise use the response as-is
@@ -460,50 +480,50 @@ class FmdClient:
     async def export_data_zip(self, out_path: str, include_pictures: bool = True) -> str:
         """
         Export all account data to a ZIP file (client-side packaging).
-        
+
         This mimics the FMD web UI's export functionality by fetching all locations
         and pictures via the existing API endpoints, decrypting them, and packaging
         them into a user-friendly ZIP file.
-        
+
         NOTE: There is no server-side /api/v1/exportData endpoint. This method
-        performs client-side data collection, decryption, and packaging, similar 
+        performs client-side data collection, decryption, and packaging, similar
         to how the web UI implements its export feature.
-        
+
         ZIP Contents:
             - info.json: Export metadata (date, device ID, counts)
             - locations.json: Decrypted location data (human-readable JSON)
             - pictures/picture_NNNN.jpg: Extracted picture files
             - pictures/manifest.json: Picture metadata (filename, size, index)
-        
+
         Args:
             out_path: Path where the ZIP file will be saved
             include_pictures: Whether to include pictures in the export (default: True)
-            
+
         Returns:
             Path to the created ZIP file
-            
+
         Raises:
             FmdApiException: If data fetching or ZIP creation fails
         """
         import zipfile
         from datetime import datetime
-        
+
         try:
             log.info("Starting data export (client-side packaging)...")
-            
+
             # Fetch all locations
             log.info("Fetching all locations...")
             location_blobs = await self.get_locations(num_to_get=-1, skip_empty=False)
-            
+
             # Fetch all pictures if requested
             picture_blobs = []
             if include_pictures:
                 log.info("Fetching all pictures...")
                 picture_blobs = await self.get_pictures(num_to_get=-1)
-            
+
             # Create ZIP file with exported data
             log.info(f"Creating export ZIP at {out_path}...")
-            with zipfile.ZipFile(out_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 # Decrypt and add readable locations
                 decrypted_locations = []
                 if location_blobs:
@@ -516,7 +536,7 @@ class FmdClient:
                         except Exception as e:
                             log.warning(f"Failed to decrypt location {i}: {e}")
                             decrypted_locations.append({"error": str(e), "index": i})
-                
+
                 # Decrypt and extract pictures as image files
                 picture_file_list = []
                 if picture_blobs:
@@ -525,26 +545,27 @@ class FmdClient:
                         try:
                             decrypted = self.decrypt_data_blob(blob)
                             # Pictures are double-encoded: decrypt -> base64 string -> image bytes
-                            inner_b64 = decrypted.decode('utf-8').strip()
+                            inner_b64 = decrypted.decode("utf-8").strip()
                             from .helpers import b64_decode_padded
+
                             image_bytes = b64_decode_padded(inner_b64)
-                            
+
                             # Determine image format from magic bytes
-                            if image_bytes.startswith(b'\xff\xd8\xff'):
-                                ext = 'jpg'
-                            elif image_bytes.startswith(b'\x89PNG'):
-                                ext = 'png'
+                            if image_bytes.startswith(b"\xff\xd8\xff"):
+                                ext = "jpg"
+                            elif image_bytes.startswith(b"\x89PNG"):
+                                ext = "png"
                             else:
-                                ext = 'jpg'  # default to jpg
-                            
+                                ext = "jpg"  # default to jpg
+
                             filename = f"pictures/picture_{i:04d}.{ext}"
                             zipf.writestr(filename, image_bytes)
                             picture_file_list.append({"index": i, "filename": filename, "size": len(image_bytes)})
-                            
+
                         except Exception as e:
                             log.warning(f"Failed to decrypt/extract picture {i}: {e}")
                             picture_file_list.append({"index": i, "error": str(e)})
-                
+
                 # Add metadata file (after processing so we have accurate counts)
                 export_info = {
                     "export_date": datetime.now().isoformat(),
@@ -552,21 +573,21 @@ class FmdClient:
                     "location_count": len(location_blobs),
                     "picture_count": len(picture_blobs),
                     "pictures_extracted": len([p for p in picture_file_list if "error" not in p]),
-                    "version": "2.0"
+                    "version": "2.0",
                 }
                 zipf.writestr("info.json", json.dumps(export_info, indent=2))
-                
+
                 # Add locations as readable JSON
                 if decrypted_locations:
                     zipf.writestr("locations.json", json.dumps(decrypted_locations, indent=2))
-                
+
                 # Add picture manifest if we extracted any
                 if picture_file_list:
                     zipf.writestr("pictures/manifest.json", json.dumps(picture_file_list, indent=2))
-            
+
             log.info(f"Export completed successfully: {out_path}")
             return out_path
-            
+
         except Exception as e:
             log.error(f"Failed to export data: {e}")
             raise FmdApiException(f"Failed to export data: {e}") from e
@@ -579,29 +600,19 @@ class FmdClient:
         log.info(f"Sending command to device: {command}")
         unix_time_ms = int(time.time() * 1000)
         message_to_sign = f"{unix_time_ms}:{command}"
-        message_bytes = message_to_sign.encode('utf-8')
+        message_bytes = message_to_sign.encode("utf-8")
         signature = self.private_key.sign(
-            message_bytes,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=32
-            ),
-            hashes.SHA256()
+            message_bytes, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32), hashes.SHA256()
         )
-        signature_b64 = base64.b64encode(signature).decode('utf-8').rstrip('=')
+        signature_b64 = base64.b64encode(signature).decode("utf-8").rstrip("=")
         # Sanitize: don't log signature which could be replayed
 
         try:
             await self._make_api_request(
                 "POST",
                 "/api/v1/command",
-                {
-                    "IDT": self.access_token,
-                    "Data": command,
-                    "UnixTime": unix_time_ms,
-                    "CmdSig": signature_b64
-                },
-                expect_json=False
+                {"IDT": self.access_token, "Data": command, "UnixTime": unix_time_ms, "CmdSig": signature_b64},
+                expect_json=False,
             )
             log.info(f"Command sent successfully: {command}")
             return True
@@ -615,7 +626,7 @@ class FmdClient:
             "gps": "locate gps",
             "cell": "locate cell",
             "network": "locate cell",
-            "last": "locate last"
+            "last": "locate last",
         }
         command = provider_map.get(provider.lower(), "locate")
         log.info(f"Requesting location update with provider: {provider} (command: {command})")
@@ -635,11 +646,7 @@ class FmdClient:
 
     async def set_ringer_mode(self, mode: str) -> bool:
         mode = mode.lower()
-        mode_map = {
-            "normal": "ringermode normal",
-            "vibrate": "ringermode vibrate",
-            "silent": "ringermode silent"
-        }
+        mode_map = {"normal": "ringermode normal", "vibrate": "ringermode vibrate", "silent": "ringermode silent"}
         if mode not in mode_map:
             raise ValueError(f"Invalid ringer mode '{mode}'. Must be 'normal', 'vibrate', or 'silent'")
         command = mode_map[mode]
@@ -672,7 +679,7 @@ def _mask_token(token: Optional[str], show_chars: int = 8) -> str:
 
 
 def _compute_backoff(base: float, attempt: int, max_delay: float, jitter: bool) -> float:
-    delay = min(max_delay, base * (2 ** attempt))
+    delay = min(max_delay, base * (2**attempt))
     if jitter:
         # Full jitter: random between 0 and delay
         return random.uniform(0, delay)

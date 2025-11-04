@@ -14,7 +14,7 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Monitoring",
@@ -40,6 +40,7 @@ Documentation = "https://github.com/devinslick/fmd_api#readme"
 dev = [
     "pytest>=7.0",
     "pytest-asyncio",
+    "pytest-cov",
     "aioresponses>=0.7.0",
     "black",
     "flake8",
@@ -63,3 +64,17 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["fmd_api"]
+omit = ["tests/*", "debugging/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

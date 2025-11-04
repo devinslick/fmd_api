@@ -3,6 +3,7 @@ Test: export_data_zip (downloads export ZIP to provided filename)
 Usage:
   python tests/functional/test_export.py [output.zip]
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -20,12 +21,14 @@ async def main():
         return
     out = sys.argv[1] if len(sys.argv) > 1 else "export_test.zip"
     from fmd_api import FmdClient
+
     client = await FmdClient.create(creds["BASE_URL"], creds["FMD_ID"], creds["PASSWORD"])
     try:
         await client.export_data_zip(out)
         print("Export saved to", out)
     finally:
         await client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

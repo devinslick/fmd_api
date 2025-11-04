@@ -21,20 +21,22 @@ async def test_get_locations_and_decrypt(monkeypatch):
         def decrypt(self, packet, padding_obj):
             # Return a 32-byte AES session key for AESGCM, for tests we use 32 zero bytes
             return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     # Build a fake AES-GCM encrypted payload: we'll create plaintext b'{"lat":1.0,"lon":2.0,"date":1234,"bat":50}'
     plaintext = b'{"lat":1.0,"lon":2.0,"date":1600000000000,"bat":50}'
     # For the test, simulate AESGCM by encrypting with a known key using AESGCM class
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
     iv = b"\x01" * 12
     ciphertext = aesgcm.encrypt(iv, plaintext, None)
     # Build blob: session_key_packet (RSA_KEY_SIZE_BYTES) + iv + ciphertext
-    session_key_packet = b"\xAA" * 384  # dummy RSA packet; DummyKey.decrypt ignores it
+    session_key_packet = b"\xaa" * 384  # dummy RSA packet; DummyKey.decrypt ignores it
     blob = session_key_packet + iv + ciphertext
-    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
 
     # Mock the endpoints used by get_locations:
     client.access_token = "dummy-token"
@@ -143,6 +145,7 @@ async def test_create_closes_session_on_auth_failure(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_with_insecure_ssl_configures_connector(monkeypatch):
     """Using create() with ssl=False should not error and should configure connector accordingly."""
+
     async def fake_authenticate(self, fmd_id, password, session_duration):
         # Minimal stub to avoid network
         self._fmd_id = fmd_id
@@ -170,7 +173,8 @@ async def test_send_command_reauth(monkeypatch):
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
     client._fmd_id = "id"
     client._password = "pw"
@@ -183,6 +187,7 @@ async def test_send_command_reauth(monkeypatch):
 
         async def fake_authenticate(fmd_id, password, session_duration):
             client.access_token = "new-token"
+
         monkeypatch.setattr(client, "authenticate", fake_authenticate)
         # Second attempt should now succeed
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
@@ -199,47 +204,50 @@ async def test_export_data_zip_stream(monkeypatch, tmp_path):
     client = FmdClient("https://fmd.example.com")
     client.access_token = "token"
     client._fmd_id = "test-device"
-    
+
     # Create a dummy private key for decryption
     class DummyKey:
         def decrypt(self, packet, padding_obj):
             return b"\x00" * 32
+
     client.private_key = DummyKey()
-    
+
     # Create fake encrypted location blob
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
     session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
     iv = b"\x01" * 12
     plaintext = b'{"lat":1.0,"lon":2.0,"date":1600000000000}'
     ciphertext = aesgcm.encrypt(iv, plaintext, None)
-    session_key_packet = b"\xAA" * 384
+    session_key_packet = b"\xaa" * 384
     blob = session_key_packet + iv + ciphertext
-    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
-    
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
+
     with aioresponses() as m:
         # Mock location API calls
         m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "1"})
         m.put("https://fmd.example.com/api/v1/location", payload={"Data": blob_b64})
         # Mock pictures API call
         m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": []})
-        
+
         out_file = tmp_path / "export.zip"
         try:
             result = await client.export_data_zip(str(out_file), include_pictures=True)
             assert result == str(out_file)
             assert out_file.exists()
-            
+
             # Verify ZIP contains expected files
             import zipfile
-            with zipfile.ZipFile(out_file, 'r') as zipf:
+
+            with zipfile.ZipFile(out_file, "r") as zipf:
                 names = zipf.namelist()
                 assert "info.json" in names
                 assert "locations.json" in names
                 # Verify encrypted files are NOT included
                 assert "locations_encrypted.json" not in names
                 assert "pictures_encrypted.json" not in names
-                
+
                 # Check info.json has correct structure
                 info = json.loads(zipf.read("info.json"))
                 assert info["fmd_id"] == "test-device"
@@ -258,7 +266,8 @@ async def test_take_picture_validation():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     with aioresponses() as m:
@@ -290,7 +299,8 @@ async def test_set_ringer_mode_validation():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     with aioresponses() as m:
@@ -324,7 +334,8 @@ async def test_request_location_providers():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     with aioresponses() as m:
@@ -350,7 +361,8 @@ async def test_set_bluetooth_and_dnd():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     with aioresponses() as m:
@@ -376,7 +388,8 @@ async def test_get_device_stats():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     with aioresponses() as m:
@@ -397,10 +410,11 @@ async def test_decrypt_data_blob_too_small():
     class DummyKey:
         def decrypt(self, packet, padding_obj):
             return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     # Blob must be at least RSA_KEY_SIZE_BYTES (384) + AES_GCM_IV_SIZE_BYTES (12) = 396 bytes
-    too_small = base64.b64encode(b"x" * 100).decode('utf-8')
+    too_small = base64.b64encode(b"x" * 100).decode("utf-8")
 
     with pytest.raises(FmdApiException, match="Blob too small for decryption"):
         client.decrypt_data_blob(too_small)
@@ -477,22 +491,25 @@ async def test_get_all_locations():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     # Create 3 location blobs
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
 
     blobs = []
     for i in range(3):
         iv = bytes([i + 1] * 12)
-        plaintext = json.dumps({"lat": float(i), "lon": float(
-            i * 10), "date": 1600000000000, "bat": 80}).encode('utf-8')
+        plaintext = json.dumps({"lat": float(i), "lon": float(i * 10), "date": 1600000000000, "bat": 80}).encode(
+            "utf-8"
+        )
         ciphertext = aesgcm.encrypt(iv, plaintext, None)
-        blob = b'\xAA' * 384 + iv + ciphertext
-        blobs.append(base64.b64encode(blob).decode('utf-8').rstrip('='))
+        blob = b"\xaa" * 384 + iv + ciphertext
+        blobs.append(base64.b64encode(blob).decode("utf-8").rstrip("="))
 
     await client._ensure_session()
 
@@ -517,17 +534,19 @@ async def test_skip_empty_locations():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-    session_key = b'\x00' * 32
+
+    session_key = b"\x00" * 32
     aesgcm = AESGCM(session_key)
-    iv = b'\x05' * 12
+    iv = b"\x05" * 12
     plaintext = b'{"lat":5.0,"lon":10.0,"date":1600000000000,"bat":90}'
     ciphertext = aesgcm.encrypt(iv, plaintext, None)
-    blob = b'\xAA' * 384 + iv + ciphertext
-    blob_b64 = base64.b64encode(blob).decode('utf-8').rstrip('=')
+    blob = b"\xaa" * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
 
     await client._ensure_session()
 
@@ -576,7 +595,8 @@ async def test_multiple_commands_sequence():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -613,7 +633,7 @@ async def test_get_pictures_pagination():
         mock_pictures = [
             {"id": 2, "date": 1600000002000},
             {"id": 1, "date": 1600000001000},
-            {"id": 0, "date": 1600000000000}
+            {"id": 0, "date": 1600000000000},
         ]
         m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": mock_pictures})
 
@@ -641,6 +661,7 @@ async def test_authenticate_error_handling():
 
         try:
             from fmd_api.exceptions import FmdApiException
+
             with pytest.raises(FmdApiException, match="API request failed for /api/v1/salt"):
                 await client.authenticate("bad_id", "bad_password", session_duration=3600)
         finally:
@@ -655,7 +676,8 @@ async def test_get_locations_with_skip_empty_false():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     await client._ensure_session()
@@ -683,7 +705,8 @@ async def test_send_command_failure():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -693,6 +716,7 @@ async def test_send_command_failure():
 
         try:
             from fmd_api.exceptions import FmdApiException
+
             with pytest.raises(FmdApiException, match="Failed to send command"):
                 await client.send_command("ring")
         finally:
@@ -706,13 +730,15 @@ async def test_decrypt_blob_invalid_format():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     # Blob too short to contain IV and ciphertext
-    short_blob = base64.b64encode(b'x' * 10).decode('utf-8')
+    short_blob = base64.b64encode(b"x" * 10).decode("utf-8")
 
     from fmd_api.exceptions import FmdApiException
+
     with pytest.raises(FmdApiException, match="Blob too small"):
         client.decrypt_data_blob(short_blob)
 
@@ -733,6 +759,7 @@ async def test_export_data_404():
         try:
             from fmd_api.exceptions import FmdApiException
             import tempfile
+
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 with pytest.raises(FmdApiException, match="Failed to export data"):
                     await client.export_data_zip(tmp.name)
@@ -766,7 +793,8 @@ async def test_request_location_unknown_provider():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -814,7 +842,8 @@ async def test_get_locations_max_attempts():
 
     class DummyKey:
         def decrypt(self, packet, padding_obj):
-            return b'\x00' * 32
+            return b"\x00" * 32
+
     client.private_key = DummyKey()
 
     await client._ensure_session()
@@ -842,7 +871,8 @@ async def test_set_ringer_mode_edge_cases():
 
     class DummySigner:
         def sign(self, message_bytes, pad, algo):
-            return b"\xAB" * 64
+            return b"\xab" * 64
+
     client.private_key = DummySigner()
 
     await client._ensure_session()
@@ -869,35 +899,31 @@ async def test_set_ringer_mode_edge_cases():
 @pytest.mark.asyncio
 async def test_timeout_configuration():
     """Test that timeout can be configured at client level and per-request."""
-    import asyncio
-    
     # Test 1: Default timeout is 30 seconds
     client1 = FmdClient("https://fmd.example.com")
     assert client1.timeout == 30.0
-    
+
     # Test 2: Custom timeout via constructor
     client2 = FmdClient("https://fmd.example.com", timeout=60.0)
     assert client2.timeout == 60.0
-    
+
     # Test 3: Timeout via create() factory method
-    client3_creds = {"BASE_URL": "https://fmd.example.com", "FMD_ID": "test", "PASSWORD": "test"}
-    
     with aioresponses() as m:
         # Mock authentication flow
         m.put("https://fmd.example.com/api/v1/salt", payload={"Data": base64.b64encode(b"x" * 16).decode().rstrip("=")})
         m.put("https://fmd.example.com/api/v1/requestAccess", payload={"Data": "fake-token"})
         m.put("https://fmd.example.com/api/v1/key", payload={"Data": "fake-key-blob"})
-        
+
         # Since we can't easily complete auth without real crypto, just test constructor accepts timeout
         client3 = FmdClient("https://fmd.example.com", timeout=45.0)
         assert client3.timeout == 45.0
-    
+
     # Test 4: Verify timeout is passed to aiohttp (integration test would be needed for full validation)
     # For now, just confirm the attribute is stored correctly
     client4 = FmdClient("https://fmd.example.com", cache_ttl=60, timeout=120.0)
     assert client4.timeout == 120.0
     assert client4.cache_ttl == 60
-    
+
     await client1.close()
     await client2.close()
     await client3.close()
@@ -920,6 +946,7 @@ async def test_async_context_manager_direct():
 @pytest.mark.asyncio
 async def test_async_context_manager_with_create(monkeypatch):
     """Using async with await FmdClient.create(...) should auto-close session."""
+
     async def fake_authenticate(self, fmd_id, password, session_duration):
         # Minimal stub: set access_token without network
         self._fmd_id = fmd_id

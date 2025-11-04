@@ -505,11 +505,60 @@ def __init__(self, ..., ssl_context: Optional[ssl.SSLContext] = None):
 - Make decryption async
 
 **For Best Practices (Minor):**
-- Add CI badges
+- Add CI badges — PARTIAL (Added Tests + Codecov badges; PyPI/version badges pending)
 - Create CHANGELOG.md
 - Document exceptions
 - Add test coverage reporting
 - Export all public models
+
+---
+
+## CI/CD Quality Gates
+
+### 🔴 24. Automated Test Runner
+**Issue:** CI workflow added to run unit tests on PRs/pushes.
+
+**Impact:** Prevents merging broken code; validates before publish.
+
+**Fix:** GitHub Actions workflow runs pytest on Python 3.8–3.12 across ubuntu/windows.
+
+**Status:** ✅ FIXED
+
+---
+
+### 🟡 25. Linting in CI
+**Issue:** Linting now enforced with flake8.
+
+**Fix:** Added flake8 step to CI workflow; configured `.flake8` for ignores/excludes.
+
+**Status:** ✅ FIXED
+
+---
+
+### 🟡 26. Type Checking in CI
+**Issue:** Type checking now enforced with mypy.
+
+**Fix:** Added mypy step to CI workflow.
+
+**Status:** ✅ FIXED
+
+---
+
+### 🟢 27. Coverage Reporting
+**Issue:** Coverage measurement now implemented; badge still pending.
+
+**Fix:** Added pytest-cov with XML output and Codecov upload in CI (matrixed across OS/Python). Use `--cov-branch` for branch coverage.
+
+**Status:** ✅ FIXED (Badge pending)
+
+---
+
+### 🟢 28. No Dependency Security Scanning
+**Issue:** No vulnerability checks on dependencies.
+
+**Fix:** Enable GitHub Dependabot or add safety checks to CI.
+
+**Status:** ❌ TODO (Minor)
 
 ---
 
@@ -525,6 +574,8 @@ Before submitting to Home Assistant:
 - [ ] CHANGELOG.md up to date
 - [ ] Stable version released to PyPI
 - [ ] Code passes `flake8` and `mypy`
+- [ ] CI runs tests on all supported Python versions
+- [ ] CI enforces linting and type checking
 
 ---
 

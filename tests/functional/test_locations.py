@@ -4,6 +4,7 @@ Fetch most recent N blobs and decrypt each (prints parsed JSON).
 Usage:
   python tests/functional/test_locations.py [N]
 """
+
 import asyncio
 import json
 import sys
@@ -27,6 +28,7 @@ async def main():
         except BaseException:
             pass
     from fmd_api import FmdClient
+
     client = await FmdClient.create(creds["BASE_URL"], creds["FMD_ID"], creds["PASSWORD"])
     try:
         blobs = await client.get_locations(num_to_get=num if num != 0 else -1)
@@ -40,6 +42,7 @@ async def main():
                 print(f"Failed to decrypt/parse blob #{i}: {e}")
     finally:
         await client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

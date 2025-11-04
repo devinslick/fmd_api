@@ -3,6 +3,7 @@ Test: get_pictures and download/decrypt the first picture found
 Usage:
   python tests/functional/test_pictures.py
 """
+
 import asyncio
 import base64
 import sys
@@ -21,6 +22,7 @@ async def main():
         return
 
     from fmd_api import FmdClient
+
     client = await FmdClient.create(creds["BASE_URL"], creds["FMD_ID"], creds["PASSWORD"])
     try:
         pics = await client.get_pictures(10)
@@ -63,6 +65,7 @@ async def main():
                 f.write(decrypted)
     finally:
         await client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

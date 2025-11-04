@@ -20,6 +20,7 @@ Examples:
   python tests/functional/test_commands.py ringer vibrate
   python tests/functional/test_commands.py locate gps
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -42,6 +43,7 @@ async def main():
 
     command = sys.argv[1].lower()
     from fmd_api import FmdClient
+
     client = await FmdClient.create(creds["BASE_URL"], creds["FMD_ID"], creds["PASSWORD"])
 
     try:
@@ -107,6 +109,7 @@ async def main():
         print(f"Error: {e}")
     finally:
         await client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())

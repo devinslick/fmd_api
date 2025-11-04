@@ -3,6 +3,7 @@ Test: Device class flows (refresh, get_location, fetch_pictures, download_photo)
 Usage:
   python tests/functional/test_device.py
 """
+
 import asyncio
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ async def main():
 
     from fmd_api import FmdClient
     from fmd_api.device import Device
+
     client = await FmdClient.create(creds["BASE_URL"], creds["FMD_ID"], creds["PASSWORD"])
     try:
         device = Device(client, device_id)
@@ -43,6 +45,7 @@ async def main():
                 print("Failed to download photo:", e)
     finally:
         await client.close()
+
 
 if __name__ == "__main__":
     asyncio.run(main())
