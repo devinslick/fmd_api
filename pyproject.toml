@@ -1,19 +1,12 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "fmd_api"
-version = "0.1.0"
-authors = [
-    {name = "Devin Slick", email = "fmd_client_github@devinslick.com"},
-]
-description = "A Python client for the FMD server API"
+version = "2.0.1"
+authors = [{name = "devinslick"}]
+description = "A Python client for the FMD (Find My Device) server API"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -21,18 +14,21 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: System :: Monitoring",
 ]
 keywords = ["fmd", "find-my-device", "location", "tracking", "device-tracking", "api-client"]
 dependencies = [
-    "requests",
     "argon2-cffi",
     "cryptography",
     "aiohttp",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project.urls]
 Homepage = "https://github.com/devinslick/fmd_api"
@@ -44,13 +40,19 @@ Documentation = "https://github.com/devinslick/fmd_api#readme"
 dev = [
     "pytest>=7.0",
     "pytest-asyncio",
+    "pytest-cov",
+    "aioresponses>=0.7.0",
     "black",
     "flake8",
     "mypy",
 ]
 
-[tool.setuptools]
-py-modules = ["fmd_api"]
+# --- IMPORTANT CHANGE ---
+# Use setuptools.find to include the package directory (fmd_api/) in built distributions.
+# Do NOT use py-modules = ["fmd_api"] which causes packaging a single fmd_api.py module.
+[tool.setuptools.packages.find]
+where = ["."]
+exclude = ["tests*", "debugging*"]
 
 [tool.black]
 line-length = 120
@@ -62,3 +64,17 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["fmd_api"]
+omit = ["tests/*", "debugging/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

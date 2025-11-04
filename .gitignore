@@ -3,6 +3,12 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.zip
+
+# User configuration files
+*.env
+credentials.txt
+*.jpg
 
 # C extensions
 *.so
@@ -40,3 +46,6 @@ env/
 # FMD Server and android app files
 fmd-server/
 fmd-android/
+
+#credentials file
+examples/tests/credentials.txt

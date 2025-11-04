@@ -1,318 +1,174 @@
-# fmd_api: Python client for interacting with FMD (fmd-foss.org)
+# fmd_api: Python client for FMD (Find My Device)
 
-This directory contains Python scripts for interacting with an FMD (Find My Device) server, including authentication, key retrieval, and location data decryption.
-For more information on this open source alternative to Google's Find My Device service, read the Credits section at the bottom of this README.
-In this repo you'll find fmd_api.py is the tool supporting fmd_client.py, used in most of the examples. 
+[![Tests](https://github.com/devinslick/fmd_api/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/devinslick/fmd_api/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/devinslick/fmd_api/branch/main/graph/badge.svg?token=8WA2TKXIOW)](https://codecov.io/gh/devinslick/fmd_api)
 
-## Prerequisites
-- Python 3.7+
-- Install dependencies:
+Modern, async Python client for the open‑source FMD (Find My Device) server. It handles authentication, key management, encrypted data decryption, location/picture retrieval, and common device commands with safe, validated helpers.
+
+## Install
+
+- Requires Python 3.8+
+- Stable (PyPI):
+  ```bash
+  pip install fmd_api
   ```
-  pip install requests argon2-cffi cryptography
+- Pre‑release (Test PyPI):
+  ```bash
+  pip install --pre --index-url https://test.pypi.org/simple/ \
+    --extra-index-url https://pypi.org/simple/ fmd_api
   ```
 
-## Scripts Overview
+## Quickstart
 
-### Main Client
-
-#### `fmd_client.py`
-**The primary tool for bulk data export.** Downloads locations and/or pictures, saving them to a directory or ZIP archive.
-
-**Usage:**
-```bash
-python fmd_client.py --url <server_url> --id <fmd_id> --password <password> --output <path> [--locations [N]] [--pictures [N]]
-```
-
-**Options:**
-- `--locations [N]`: Export all locations, or specify N for the most recent N locations
-- `--pictures [N]`: Export all pictures, or specify N for the most recent N pictures
-- `--output`: Output directory or `.zip` file path
-- `--session`: Session duration in seconds (default: 3600)
-
-**Examples:**
-```bash
-# Export all locations to CSV
-python fmd_client.py --url https://fmd.example.com --id alice --password secret --output data --locations
-
-# Export last 10 locations and 5 pictures to ZIP
-python fmd_client.py --url https://fmd.example.com --id alice --password secret --output export.zip --locations 10 --pictures 5
-```
-
-### Debugging Scripts
-
-Located in `debugging/`, these scripts help test individual workflows and troubleshoot issues.
-
-#### `fmd_get_location.py`
-**End-to-end test:** Authenticates, retrieves, and decrypts the latest location in one step.
-
-**Usage:**
-```bash
-cd debugging
-python fmd_get_location.py --url <server_url> --id <fmd_id> --password <password>
-```
-
-#### `fmd_export_data.py`
-**Test native export:** Downloads the server's pre-packaged export ZIP (if available).
-
-**Usage:**
-```bash
-cd debugging
-python fmd_export_data.py --url <server_url> --id <fmd_id> --password <password> --output export.zip
-```
-
-#### `request_location_example.py`
-**Request new location:** Triggers a device to capture and upload a new location update.
-
-**Usage:**
-```bash
-cd debugging
-python request_location_example.py --url <server_url> --id <fmd_id> --password <password> [--provider all|gps|cell|last] [--wait SECONDS]
-```
-
-**Options:**
-- `--provider`: Location provider to use (default: all)
-  - `all`: Use all available providers (GPS, network, fused)
-  - `gps`: GPS only (most accurate, slower)
-  - `cell`: Cellular network (faster, less accurate)
-  - `last`: Don't request new location, just get last known
-- `--wait`: Seconds to wait for location update (default: 30)
-
-**Example:**
-```bash
-# Request GPS location and wait 45 seconds
-python request_location_example.py --url https://fmd.example.com --id alice --password secret --provider gps --wait 45
-
-# Quick cellular network location
-python request_location_example.py --url https://fmd.example.com --id alice --password secret --provider cell --wait 20
-```
-
-#### `diagnose_blob.py`
-**Diagnostic tool:** Analyzes encrypted blob structure to troubleshoot decryption issues.
-
-**Usage:**
-```bash
-cd debugging
-python diagnose_blob.py --url <server_url> --id <fmd_id> --password <password>
-```
-
-Shows:
-- Private key size and type
-- Actual blob size vs. expected structure
-- Analysis of RSA session key packet layout
-- First/last bytes in hex for inspection
-
-## Core Library
-
-### `fmd_api.py`
-The foundational API library providing the `FmdApi` class. Handles:
-- Authentication (salt retrieval, Argon2id password hashing, token management)
-- Encrypted private key retrieval and decryption
-- Data blob decryption (RSA-OAEP + AES-GCM)
-- Location and picture retrieval
-- Command sending (request location updates, ring, lock, camera)
-  - Commands are cryptographically signed using RSA-PSS to prove authenticity
-
-**For application developers:** See [LOCATION_FIELDS.md](LOCATION_FIELDS.md) for detailed documentation on extracting and using accuracy, altitude, speed, and heading fields.
-
-**Quick example:**
 ```python
-import asyncio
-import json
-from fmd_api import FmdApi
+import asyncio, json
+from fmd_api import FmdClient
 
 async def main():
-    # Authenticate (automatically retrieves and decrypts private key)
-    api = await FmdApi.create("https://fmd.example.com", "alice", "secret")
+  # Recommended: async context manager auto-closes session
+  async with await FmdClient.create("https://fmd.example.com", "alice", "secret") as client:
+    # Request a fresh GPS fix and wait a bit on your side
+    await client.request_location("gps")
 
-    # Request a new location update
-    await api.request_location('gps')  # or 'all', 'cell', 'last'
-    await asyncio.sleep(30)  # Wait for device to respond
+    # Fetch most recent locations and decrypt the latest
+    blobs = await client.get_locations(num_to_get=1)
+    loc = json.loads(client.decrypt_data_blob(blobs[0]))
+    print(loc["lat"], loc["lon"], loc.get("accuracy"))
 
-    # Get locations
-    locations = await api.get_all_locations(num_to_get=10)  # Last 10, or -1 for all
-
-    # Decrypt a location blob
-    decrypted_data = api.decrypt_data_blob(locations[0])
-    location = json.loads(decrypted_data)
-    
-    # Access fields (use .get() for optional fields)
-    lat = location['lat']
-    lon = location['lon']
-    speed = location.get('speed')      # Optional, only when moving
-    heading = location.get('heading')  # Optional, only when moving
-    
-    # Send commands (see Available Commands section below)
-    await api.send_command('ring')           # Make device ring
-    await api.send_command('bluetooth on')   # Enable Bluetooth
-    await api.send_command('camera front')   # Take picture with front camera
+    # Take a picture (validated helper)
+    await client.take_picture("front")
 
 asyncio.run(main())
 ```
 
-### Available Commands
+### TLS and self-signed certificates
 
-The FMD Android app supports a comprehensive set of commands. You can send them using `api.send_command(command)` or use the convenience methods and constants:
+Find My Device always requires HTTPS; plain HTTP is not allowed by this client. If you need to connect to a server with a self-signed certificate, you have two options:
 
-#### Location Requests
+- Preferred (secure): provide a custom SSLContext that trusts your CA or certificate
+- Last resort (not for production): disable certificate validation explicitly
+
+Examples:
+
 ```python
-# Using convenience method
-await api.request_location('gps')    # GPS only
-await api.request_location('all')    # All providers (default)
-await api.request_location('cell')   # Cellular network only
+import ssl
+from fmd_api import FmdClient
 
-# Using send_command directly
-await api.send_command('locate gps')
-await api.send_command('locate')
-await api.send_command('locate cell')
-await api.send_command('locate last')  # Last known, no new request
+# 1) Custom CA bundle / pinned cert (recommended)
+ctx = ssl.create_default_context()
+ctx.load_verify_locations(cafile="/path/to/your/ca.pem")
 
-# Using constants
-from fmd_api import FmdCommands
-await api.send_command(FmdCommands.LOCATE_GPS)
+# Via constructor
+client = FmdClient("https://fmd.example.com", ssl=ctx)
+
+# Or via factory
+# async with await FmdClient.create("https://fmd.example.com", "user", "pass", ssl=ctx) as client:
+
+# 2) Disable verification (development only)
+insecure_client = FmdClient("https://fmd.example.com", ssl=False)
 ```
 
-#### Device Control
+Notes:
+- HTTP (http://) is rejected. Use only HTTPS URLs.
+- Prefer a custom SSLContext over disabling verification.
+- For higher security, consider pinning the server cert in your context.
+
+> Warning
+>
+> Passing `ssl=False` disables TLS certificate validation and should only be used in development. For production, use a custom `ssl.SSLContext` that trusts your CA/certificate or pin the server certificate. The client enforces HTTPS and rejects `http://` URLs.
+
+#### Pinning the exact server certificate (recommended for self-signed)
+
+If you're using a self-signed certificate and want to pin to that exact cert, load the server's PEM (or DER) directly into an SSLContext. This ensures only that certificate (or its CA) is trusted.
+
 ```python
-# Ring device
-await api.send_command('ring')
-await api.send_command(FmdCommands.RING)
+import ssl
+from fmd_api import FmdClient
 
-# Lock device screen
-await api.send_command('lock')
-await api.send_command(FmdCommands.LOCK)
+# Export your server's certificate to PEM (e.g., server-cert.pem)
+ctx = ssl.create_default_context()
+ctx.verify_mode = ssl.CERT_REQUIRED
+ctx.check_hostname = True  # keep hostname verification when possible
+ctx.load_verify_locations(cafile="/path/to/server-cert.pem")
 
-# ⚠️ Delete/wipe device (DESTRUCTIVE - factory reset!)
-await api.send_command('delete')
-await api.send_command(FmdCommands.DELETE)
+client = FmdClient("https://fmd.example.com", ssl=ctx)
+# async with await FmdClient.create("https://fmd.example.com", "user", "pass", ssl=ctx) as client:
 ```
 
-#### Camera
-```python
-# Using convenience method
-await api.take_picture('back')   # Rear camera (default)
-await api.take_picture('front')  # Front camera (selfie)
+Tips:
+- If the server cert changes, pinning will fail until you update the PEM.
+- For intermediate/CA signing chains, prefer pinning a private CA instead of the leaf.
 
-# Using send_command
-await api.send_command('camera back')
-await api.send_command('camera front')
+## What’s in the box
 
-# Using constants
-await api.send_command(FmdCommands.CAMERA_BACK)
-await api.send_command(FmdCommands.CAMERA_FRONT)
-```
+- `FmdClient` (primary API)
+  - Auth and key retrieval (salt → Argon2id → access token → private key decrypt)
+  - Decrypt blobs (RSA‑OAEP wrapped AES‑GCM)
+  - Fetch data: `get_locations`, `get_pictures`
+  - Export: `export_data_zip(out_path)` — client-side packaging of all locations/pictures into ZIP (mimics web UI, no server endpoint)
+  - Validated command helpers:
+    - `request_location("all|gps|cell|last")`
+    - `take_picture("front|back")`
+    - `set_bluetooth(enable: bool)` — True = on, False = off
+    - `set_do_not_disturb(enable: bool)` — True = on, False = off
+    - `set_ringer_mode("normal|vibrate|silent")`
+    - `get_device_stats()`
 
-#### Bluetooth
-```python
-# Using convenience method
-await api.toggle_bluetooth(True)   # Enable
-await api.toggle_bluetooth(False)  # Disable
+  
+  - Low‑level: `decrypt_data_blob(b64_blob)`
 
-# Using send_command
-await api.send_command('bluetooth on')
-await api.send_command('bluetooth off')
+- `Device` helper (per‑device convenience)
+  - `await device.refresh()` → hydrate cached state
+  - `await device.get_location()` → parsed last location
+  - `await device.fetch_pictures(n)` + `await device.download_photo(item)`
 
-# Using constants
-await api.send_command(FmdCommands.BLUETOOTH_ON)
-await api.send_command(FmdCommands.BLUETOOTH_OFF)
-```
+## Testing
 
-**Note:** Android 12+ requires BLUETOOTH_CONNECT permission.
+### Functional tests
 
-#### Do Not Disturb Mode
-```python
-# Using convenience method
-await api.toggle_do_not_disturb(True)   # Enable DND
-await api.toggle_do_not_disturb(False)  # Disable DND
+Runnable scripts under `tests/functional/`:
 
-# Using send_command
-await api.send_command('nodisturb on')
-await api.send_command('nodisturb off')
+- `test_auth.py` – basic auth smoke test
+- `test_locations.py` – list and decrypt recent locations
+- `test_pictures.py` – list and download/decrypt a photo
+- `test_device.py` – device helper flows
+- `test_commands.py` – validated command wrappers (no raw strings)
+- `test_export.py` – export data to ZIP
+- `test_request_location.py` – request location and poll for results
 
-# Using constants
-await api.send_command(FmdCommands.NODISTURB_ON)
-await api.send_command(FmdCommands.NODISTURB_OFF)
-```
+Put credentials in `tests/utils/credentials.txt` (copy from `credentials.txt.example`).
 
-**Note:** Requires Do Not Disturb Access permission.
+### Unit tests
 
-#### Ringer Mode
-```python
-# Using convenience method
-await api.set_ringer_mode('normal')   # Sound + vibrate
-await api.set_ringer_mode('vibrate')  # Vibrate only
-await api.set_ringer_mode('silent')   # Silent (also enables DND)
+Located in `tests/unit/`:
+- `test_client.py` – client HTTP flows with mocked responses
+- `test_device.py` – device wrapper logic
 
-# Using send_command
-await api.send_command('ringermode normal')
-await api.send_command('ringermode vibrate')
-await api.send_command('ringermode silent')
-
-# Using constants
-await api.send_command(FmdCommands.RINGERMODE_NORMAL)
-await api.send_command(FmdCommands.RINGERMODE_VIBRATE)
-await api.send_command(FmdCommands.RINGERMODE_SILENT)
-```
-
-**Note:** Setting to "silent" also enables Do Not Disturb (Android behavior). Requires Do Not Disturb Access permission.
-
-#### Device Information
-```python
-# Get network statistics (IP addresses, WiFi SSID/BSSID)
-await api.get_device_stats()
-await api.send_command('stats')
-await api.send_command(FmdCommands.STATS)
-
-# Get battery and GPS status
-await api.send_command('gps')
-await api.send_command(FmdCommands.GPS)
-```
-
-**Note:** `stats` command requires Location permission to access WiFi information.
-
-#### Command Testing Script
-Test any command easily:
+Run with pytest:
 ```bash
-cd debugging
-python test_command.py <command> --url <server_url> --id <fmd_id> --password <password>
-
-# Examples
-python test_command.py "ring" --url https://fmd.example.com --id alice --password secret
-python test_command.py "bluetooth on" --url https://fmd.example.com --id alice --password secret
-python test_command.py "ringermode vibrate" --url https://fmd.example.com --id alice --password secret
+pip install -e ".[dev]"
+pytest tests/unit/
 ```
+
+## API highlights
+
+- Encryption compatible with FMD web client
+  - RSA‑3072 OAEP (SHA‑256) wrapping AES‑GCM session key
+  - AES‑GCM IV: 12 bytes; RSA packet size: 384 bytes
+- Password/key derivation with Argon2id
+- Robust HTTP JSON/text fallback and 401 re‑auth
 
 ## Troubleshooting
 
-### Empty or Invalid Blobs
-If you see warnings like `"Blob too small for decryption"`, the server returned empty/corrupted data. This can happen when:
-- No location data was uploaded for that time period
-- Data was deleted or corrupted server-side
-- The server returns placeholder values for missing data
-
-The client will skip these automatically and report the count at the end.
-
-### Debugging Decryption Issues
-Use `debugging/diagnose_blob.py` to analyze blob structure:
-```bash
-cd debugging
-python diagnose_blob.py --url <server_url> --id <fmd_id> --password <password>
-```
-
-This shows the actual blob size, expected structure, and helps identify if the RSA key size or encryption format has changed.
-
-## Notes
-- All scripts use Argon2id password hashing and AES-GCM/RSA-OAEP encryption, matching the FMD web client
-- Blobs must be at least 396 bytes (384 RSA session key + 12 IV + ciphertext) to be valid
-- Base64 data from the server may be missing padding - use `_pad_base64()` helper when needed
-- **Location data fields**:
-  - Always present: `time`, `provider`, `bat` (battery %), `lat`, `lon`, `date` (Unix ms)
-  - Optional (depending on provider): `accuracy` (meters), `altitude` (meters), `speed` (m/s), `heading` (degrees)
-- Picture data is double-encoded: encrypted blob → base64 string → actual image bytes
+- "Blob too small for decryption": server returned empty/placeholder data. Skip and continue.
+- Pictures may be double‑encoded (encrypted blob → base64 image string). The examples show how to decode safely.
 
 ## Credits
 
-This project is a client for the open-source FMD (Find My Device) server. The FMD project provides a decentralized, self-hostable alternative to commercial device tracking services.
+This client targets the FMD ecosystem:
 
-- **[fmd-foss.org](https://fmd-foss.org/)**: The official project website, offering general information, documentation, and news.
-- **[fmd-foss on GitLab](https://gitlab.com/fmd-foss)**: The official GitLab group hosting the source code for the server, Android client, web UI, and other related projects.
-- **[fmd.nulide.de](https://fmd.nulide.de/)**: A generously hosted public instance of the FMD server available for community use.
+- https://fmd-foss.org/
+- https://gitlab.com/fmd-foss
+- Public community instance: https://fmd.nulide.de/
+
+MIT © 2025 Devin Slick
