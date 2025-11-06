@@ -5,6 +5,7 @@ Focuses on uncovered branches and edge cases in client.py and device.py
 
 import json
 import base64
+import zipfile
 import pytest
 from aioresponses import aioresponses
 from cryptography.hazmat.primitives import serialization, hashes
@@ -311,8 +312,6 @@ async def test_export_zip_png_detection():
             assert result == output_path
 
             # Verify ZIP contains PNG
-            import zipfile
-
             with zipfile.ZipFile(output_path, "r") as zf:
                 files = zf.namelist()
                 assert "pictures/manifest.json" in files
@@ -351,8 +350,6 @@ async def test_export_zip_picture_decrypt_error():
             await client.export_data_zip(output_path, include_pictures=True)
 
             # Should complete despite error
-            import zipfile
-
             with zipfile.ZipFile(output_path, "r") as zf:
                 manifest = json.loads(zf.read("pictures/manifest.json"))
                 # Error should be recorded
@@ -393,8 +390,6 @@ async def test_export_zip_location_decrypt_error():
             await client.export_data_zip(output_path, include_pictures=False)
 
             # Should complete with error recorded
-            import zipfile
-
             with zipfile.ZipFile(output_path, "r") as zf:
                 locations = json.loads(zf.read("locations.json"))
                 assert "error" in locations[0]
@@ -980,7 +975,6 @@ async def test_export_zip_default_jpg_extension():
 
         try:
             import tempfile
-            import zipfile
 
             with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
                 output_path = tmp.name
