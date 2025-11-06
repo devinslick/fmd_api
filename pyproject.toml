@@ -45,6 +45,7 @@ dev = [
     "black",
     "flake8",
     "mypy",
+    "pre-commit",
 ]
 
 # --- IMPORTANT CHANGE ---
