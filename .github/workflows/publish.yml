@@ -1,11 +1,11 @@
 name: Publish Python Package
 
 # Trigger on:
-#  - pushes to any branch (we'll publish to TestPyPI for non-main branches and to PyPI for main)
-#  - published GitHub Releases (keep existing behavior for canonical releases)
+#  - pushes to main (publish to PyPI after merge)
+#  - published GitHub Releases (publish to PyPI for versioned releases)
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   release:
     types: [published]
 
@@ -40,34 +40,6 @@ jobs:
         with:
           name: python-package-distributions
           path: dist/
-
-  # Publish from pushes to non-main branches -> TestPyPI
-  publish_testpypi:
-    name: Publish to TestPyPI (branches except main)
-    runs-on: ubuntu-latest
-    needs: build_sdist_and_wheel
-    # Only run for pushes (not releases) and only for branches that are NOT main
-    if: |
-      github.event_name == 'push' &&
-      startsWith(github.ref, 'refs/heads/') &&
-      github.ref != 'refs/heads/main'
-    environment: testpypi
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Download dists
-        uses: actions/download-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Publish package distributions to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          # repository-url directs upload to TestPyPI
-          repository-url: https://test.pypi.org/legacy/
 
   # Publish from pushes to main OR when a Release is published -> Production PyPI
   publish_pypi:

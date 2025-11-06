@@ -317,13 +317,9 @@ class FmdClient:
                         continue
 
                     # Transient server errors -> retry (except for unsafe command POSTs)
-                    if resp.status in (500, 502, 503, 504) and not (
-                        is_command and method.upper() == "POST"
-                    ):
+                    if resp.status in (500, 502, 503, 504) and not (is_command and method.upper() == "POST"):
                         if attempts_left > 0:
-                            delay = _compute_backoff(
-                                self.backoff_base, backoff_attempt, self.backoff_max, self.jitter
-                            )
+                            delay = _compute_backoff(self.backoff_base, backoff_attempt, self.backoff_max, self.jitter)
                             log.warning(
                                 f"Server error {resp.status}. "
                                 f"Retrying in {delay:.2f}s ({attempts_left} retries left)..."
@@ -350,11 +346,7 @@ class FmdClient:
                                 # Sanitize: don't log full JSON which may contain tokens/sensitive data
                                 if log.isEnabledFor(logging.DEBUG):
                                     # Log safe metadata only
-                                    keys = (
-                                        list(json_data.keys())
-                                        if isinstance(json_data, dict)
-                                        else "non-dict"
-                                    )
+                                    keys = list(json_data.keys()) if isinstance(json_data, dict) else "non-dict"
                                     log.debug(f"{endpoint} JSON response received with keys: {keys}")
                                 return json_data["Data"]
                             except (KeyError, ValueError, json.JSONDecodeError) as e:

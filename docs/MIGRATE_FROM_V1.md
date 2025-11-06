@@ -175,16 +175,16 @@ from fmd_api import FmdApi
 
 async def main():
     api = await FmdApi.create("https://fmd.example.com", "alice", "secret")
-    
+
     # Request new location
     await api.request_location('gps')
     await asyncio.sleep(30)
-    
+
     # Get locations
     blobs = await api.get_all_locations(1)
     location_json = api.decrypt_data_blob(blobs[0])
     location = json.loads(location_json)
-    
+
     print(f"Lat: {location['lat']}, Lon: {location['lon']}")
     await api.close()
 
@@ -199,16 +199,16 @@ from fmd_api import FmdClient
 
 async def main():
     client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
-    
+
     # Request new location
     await client.request_location('gps')
     await asyncio.sleep(30)
-    
+
     # Get locations
     blobs = await client.get_locations(1)
     location_json = client.decrypt_data_blob(blobs[0])
     location = json.loads(location_json)
-    
+
     print(f"Lat: {location['lat']}, Lon: {location['lon']}")
     await client.close()
 
@@ -223,14 +223,14 @@ from fmd_api import FmdClient, Device
 async def main():
     client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
     device = Device(client, "alice")
-    
+
     # Request and get location (simplified)
     await client.request_location('gps')
     await asyncio.sleep(30)
-    
+
     location = await device.get_location(force=True)
     print(f"Lat: {location.lat}, Lon: {location.lon}")
-    
+
     await client.close()
 
 asyncio.run(main())
@@ -244,16 +244,16 @@ from fmd_api import FmdApi, FmdCommands
 
 async def control_device():
     api = await FmdApi.create("https://fmd.example.com", "alice", "secret")
-    
+
     # Using constants
     await api.send_command(FmdCommands.RING)
     await api.send_command(FmdCommands.BLUETOOTH_ON)
-    
+
     # Using convenience methods
     await api.toggle_bluetooth(True)
     await api.toggle_do_not_disturb(True)
     await api.set_ringer_mode('vibrate')
-    
+
     await api.close()
 ```
 
@@ -263,16 +263,16 @@ from fmd_api import FmdClient
 
 async def control_device():
     client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
-    
+
     # Use strings directly (constants removed)
     await client.send_command('ring')
     await client.send_command('bluetooth on')
-    
+
     # Using convenience methods (renamed from toggle_* to set_*)
     await client.set_bluetooth(True)
     await client.set_do_not_disturb(True)
     await client.set_ringer_mode('vibrate')
-    
+
     await client.close()
 ```
 
@@ -283,15 +283,15 @@ from fmd_api import FmdClient, Device
 async def control_device():
     client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
     device = Device(client, "alice")
-    
+
     # Use device methods for cleaner API
     await device.play_sound()
-    
+
     # Settings still use client
     await client.set_bluetooth(True)
     await client.set_do_not_disturb(True)
     await client.set_ringer_mode('vibrate')
-    
+
     await client.close()
 ```
 
@@ -304,13 +304,13 @@ from fmd_api import FmdApi
 
 async def get_history():
     api = await FmdApi.create("https://fmd.example.com", "alice", "secret")
-    
+
     blobs = await api.get_all_locations(10)
     for blob in blobs:
         location_json = api.decrypt_data_blob(blob)
         location = json.loads(location_json)
         print(f"Date: {location['date']}, Lat: {location['lat']}, Lon: {location['lon']}")
-    
+
     await api.close()
 ```
 
@@ -321,11 +321,11 @@ from fmd_api import FmdClient, Device
 async def get_history():
     client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
     device = Device(client, "alice")
-    
+
     # Async iterator with automatic decryption
     async for location in device.get_history(limit=10):
         print(f"Date: {location.date}, Lat: {location.lat}, Lon: {location.lon}")
-    
+
     await client.close()
 ```
 

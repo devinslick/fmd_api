@@ -1,0 +1,48 @@
+name: Publish to TestPyPI (Manual)
+
+# Manual workflow to publish to TestPyPI for testing before production release
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "publish" to confirm TestPyPI upload'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  build_and_publish:
+    name: Build and publish to TestPyPI
+    runs-on: ubuntu-latest
+    # Only run if user typed "publish" to confirm
+    if: github.event.inputs.confirm == 'publish'
+    environment: testpypi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build
+
+      - name: Build distributions
+        run: python -m build --sdist --wheel
+
+      - name: Publish package distributions to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
+      - name: Output installation command
+        run: |
+          VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
+          echo "::notice::Package published to TestPyPI. Test with: pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple fmd_api==$VERSION"

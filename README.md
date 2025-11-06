@@ -114,7 +114,7 @@ Tips:
     - `set_ringer_mode("normal|vibrate|silent")`
     - `get_device_stats()`
 
-  
+
   - Low‑level: `decrypt_data_blob(b64_blob)`
 
 - `Device` helper (per‑device convenience)

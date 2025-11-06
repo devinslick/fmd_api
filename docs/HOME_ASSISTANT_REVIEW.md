@@ -79,7 +79,7 @@ async def _make_api_request(self, ..., timeout: int = 30):
 - `pyproject.toml`: `2.0.0.dev8` (PEP 440 compliant)
 - `_version.py`: `2.0.0-dev8` (uses hyphen instead of dot)
 
-**Location:** 
+**Location:**
 - `pyproject.toml` line 3
 - `fmd_api/_version.py` line 1
 
@@ -143,7 +143,7 @@ if resp.status == 429:
 class FmdClient:
     async def __aenter__(self):
         return self
-    
+
     async def __aexit__(self, exc_type, exc, tb):
         await self.close()
 ```
@@ -191,9 +191,9 @@ async with await FmdClient.create(...) as client:
 - Line ~88: Logs may include auth details
 - Line ~203: Logs full JSON responses which may contain tokens
 
-**Fix:** 
+**Fix:**
 - Sanitize all log output
-- Mask tokens: `log.debug(f"Token: {token[:8]}...")` 
+- Mask tokens: `log.debug(f"Token: {token[:8]}...")`
 - Add guards: `if log.isEnabledFor(logging.DEBUG):`
 
 **HA Rationale:** Security and privacy requirement for production systems.
@@ -364,7 +364,7 @@ async def decrypt_data_blob_async(self, data_b64: str) -> bytes:
 async def get_locations(...) -> List[str]:
     """
     ...
-    
+
     Raises:
         AuthenticationError: If authentication fails
         FmdApiException: If server returns error
@@ -384,7 +384,7 @@ async def get_locations(...) -> List[str]:
 
 **Location:** Test configuration
 
-**Fix:** 
+**Fix:**
 - Add `pytest-cov` to dev dependencies
 - Configure coverage in `pyproject.toml`
 - Add coverage reporting to CI workflow

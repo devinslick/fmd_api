@@ -1,0 +1,48 @@
+# Pre-commit hooks configuration
+# See https://pre-commit.com for more information
+repos:
+  # General file cleanup
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '^tests/functional/'
+      - id: end-of-file-fixer
+        exclude: '^tests/functional/'
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Python code formatting with black
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3
+
+  # Python linting with flake8
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        args: ['--count', '--show-source', '--statistics']
+        exclude: '^tests/functional/'
+
+  # Python type checking with mypy
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-aiofiles
+          - aiohttp
+          - argon2-cffi
+          - cryptography
+        args: ['--install-types', '--non-interactive']
+        exclude: '^tests/'

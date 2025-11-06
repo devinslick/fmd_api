@@ -1,7 +1,7 @@
 # Proposal: fmd_api v2 — Device-centric async interface
 
-Status: Draft  
-Author: devinslick (proposal by Copilot Space)  
+Status: Draft
+Author: devinslick (proposal by Copilot Space)
 Date: 2025-11-01
 
 ## Goals
