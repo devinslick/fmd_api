@@ -190,5 +190,6 @@ This client targets the FMD ecosystem:
 - https://fmd-foss.org/
 - https://gitlab.com/fmd-foss
 - Public community instance: https://fmd.nulide.de/
+ - Listed on the official FMD community page: https://fmd-foss.org/docs/fmd-server/community
 
 MIT © 2025 Devin Slick
