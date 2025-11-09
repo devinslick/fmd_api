@@ -26,7 +26,7 @@ from fmd_api import FmdClient
 
 async def main():
   # Recommended: async context manager auto-closes session
-  async with await FmdClient.create("https://fmd.example.com", "alice", "secret") as client:
+  async with await FmdClient.create("https://fmd.example.com", "alice", "secret", drop_password=True) as client:
     # Request a fresh GPS fix and wait a bit on your side
     await client.request_location("gps")
 
@@ -136,7 +136,7 @@ async def main():
   client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
   device = Device(client, "alice")
   # Optional message is sanitized (quotes/newlines removed, whitespace collapsed)
-  await device.lock(message="Lost phone. Please call +1-555-1234")
+  await device.lock(message="Lost phone. Please call +1-555-555-1234")
   await client.close()
 
 asyncio.run(main())
@@ -177,6 +177,24 @@ pytest tests/unit/
   - AES‑GCM IV: 12 bytes; RSA packet size: 384 bytes
 - Password/key derivation with Argon2id
 - Robust HTTP JSON/text fallback and 401 re‑auth
+  - Supports password-free resume via exported auth artifacts (hash + token + private key)
+
+### Advanced: Password-Free Resume
+
+You can onboard once with a raw password, optionally discard it immediately using `drop_password=True`, export authentication artifacts, and later resume without storing the raw secret:
+
+```python
+client = await FmdClient.create(url, fmd_id, password, drop_password=True)
+artifacts = await client.export_auth_artifacts()
+
+# Persist `artifacts` securely (contains hash, token, private key)
+
+# Later / after restart
+client2 = await FmdClient.from_auth_artifacts(artifacts)
+locations = await client2.get_locations(1)
+```
+
+On a 401, the client will transparently reauthenticate using the stored Argon2id `password_hash` if available. When `drop_password=True`, the raw password is never retained after initial onboarding.
 
 ## Troubleshooting
 
