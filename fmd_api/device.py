@@ -208,7 +208,5 @@ class Device:
         # Validate alphanumeric ASCII without spaces
         if not all(ch.isalnum() and ord(ch) < 128 for ch in pin):
             raise OperationError("PIN must contain only alphanumeric ASCII characters (a-z, A-Z, 0-9), no spaces")
-        if " " in pin:
-            raise OperationError("PIN cannot contain spaces")
         command = f"fmd delete {pin}"
         return await self.client.send_command(command)
