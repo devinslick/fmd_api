@@ -14,8 +14,10 @@ Commands:
 
 Examples:
   python tests/functional/test_commands.py ring
+  python tests/functional/test_commands.py lock "Please call 1-555-555-5555 to return my phone"
   python tests/functional/test_commands.py camera front
   python tests/functional/test_commands.py bluetooth on
+  python tests/functional/test_commands.py dnd on
   python tests/functional/test_commands.py ringer vibrate
   python tests/functional/test_commands.py locate gps
 """
