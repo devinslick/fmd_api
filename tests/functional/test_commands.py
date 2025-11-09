@@ -5,7 +5,7 @@ Usage:
 
 Commands:
   ring                    - Make device ring
-  lock                    - Lock device screen
+    lock [message...]       - Lock device screen (optional message)
   camera <front|back>     - Take picture (default: back)
   bluetooth <on|off>      - Set Bluetooth on/off
   dnd <on|off>           - Set Do Not Disturb on/off
@@ -53,7 +53,18 @@ async def main():
             print(f"Ring command sent: {result}")
 
         elif command == "lock":
-            result = await client.send_command("lock")
+            # Optional message; sanitize similar to Device.lock
+            msg = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else None
+            cmd = "lock"
+            if msg:
+                sanitized = " ".join(msg.strip().split())
+                for ch in ['"', "'", "`", ";"]:
+                    sanitized = sanitized.replace(ch, "")
+                if len(sanitized) > 120:
+                    sanitized = sanitized[:120]
+                if sanitized:
+                    cmd = f"lock {sanitized}"
+            result = await client.send_command(cmd)
             print(f"Lock command sent: {result}")
 
         elif command == "camera":

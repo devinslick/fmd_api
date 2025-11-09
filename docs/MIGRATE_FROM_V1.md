@@ -75,6 +75,8 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 |----|----------------|-------------|-------|
 | `await api.take_picture('back')` | `await client.take_picture('back')` | `await device.take_rear_photo()` | Device method preferred |
 | `await api.take_picture('front')` | `await client.take_picture('front')` | `await device.take_front_photo()` | Device method preferred |
+> Note: `Device.lock(message=None)` now supports passing an optional message string. The server may ignore the
+> message if UI or server versions don't yet consume it, but the base lock command will still be executed.
 
 ### Bluetooth & Audio Settings
 

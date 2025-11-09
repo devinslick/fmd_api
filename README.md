@@ -121,6 +121,25 @@ Tips:
   - `await device.refresh()` → hydrate cached state
   - `await device.get_location()` → parsed last location
   - `await device.fetch_pictures(n)` + `await device.download_photo(item)`
+  - Commands: `await device.play_sound()`, `await device.take_front_photo()`,
+    `await device.take_rear_photo()`, `await device.lock(message=None)`,
+    `await device.wipe(confirm=True)`
+
+### Example: Lock device with a message
+
+```python
+import asyncio
+from fmd_api import FmdClient, Device
+
+async def main():
+  client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
+  device = Device(client, "alice")
+  # Optional message is sanitized (quotes/newlines removed, whitespace collapsed)
+  await device.lock(message="Lost phone. Please call +1-555-1234")
+  await client.close()
+
+asyncio.run(main())
+```
 
 ## Testing
 

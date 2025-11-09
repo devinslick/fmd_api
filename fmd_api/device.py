@@ -109,10 +109,29 @@ class Device:
             raise OperationError(f"Failed to decode picture blob: {e}") from e
 
     async def lock(self, message: Optional[str] = None, passcode: Optional[str] = None) -> bool:
-        # The original API supports "lock" command; it does not carry message/passcode in the current client
-        # Implementation preserves original behavior (sends "lock" command).
-        # Extensions can append data if server supports it.
-        return await self.client.send_command("lock")
+        """Lock the device, optionally passing a message (and future passcode).
+
+        Notes:
+        - The public web UI may not expose message/passcode yet, but protocol-level
+          support is expected. We optimistically send a formatted command if a message
+          is provided: "lock <escaped>".
+        - Sanitization: collapse whitespace, limit length, and strip unsafe characters.
+        - If server ignores the payload, the base "lock" still executes.
+        - Passcode argument reserved for potential future support; currently unused.
+        """
+        base = "lock"
+        if message:
+            # Basic sanitization: trim, collapse internal whitespace, remove newlines
+            sanitized = " ".join(message.strip().split())
+            # Remove characters that could break command parsing (quotes/backticks/semicolons)
+            for ch in ['"', "'", "`", ";"]:
+                sanitized = sanitized.replace(ch, "")
+            # Cap length to 120 chars to avoid overly long command payloads
+            if len(sanitized) > 120:
+                sanitized = sanitized[:120]
+            if sanitized:
+                base = f"lock {sanitized}"
+        return await self.client.send_command(base)
 
     async def wipe(self, confirm: bool = False) -> bool:
         if not confirm:
