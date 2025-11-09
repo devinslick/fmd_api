@@ -5,18 +5,19 @@ Usage:
 
 Commands:
   ring                    - Make device ring
-  lock                    - Lock device screen
+    lock [message...]       - Lock device screen (optional message)
   camera <front|back>     - Take picture (default: back)
   bluetooth <on|off>      - Set Bluetooth on/off
   dnd <on|off>           - Set Do Not Disturb on/off
-  ringer <normal|vibrate|silent> - Set ringer mode
-  stats                   - Get device network statistics
+    ringer <normal|vibrate|silent> - Set ringer mode
   locate [all|gps|cell|last] - Request location update (default: all)
 
 Examples:
   python tests/functional/test_commands.py ring
+  python tests/functional/test_commands.py lock "Please call 1-555-555-5555 to return my phone"
   python tests/functional/test_commands.py camera front
   python tests/functional/test_commands.py bluetooth on
+  python tests/functional/test_commands.py dnd on
   python tests/functional/test_commands.py ringer vibrate
   python tests/functional/test_commands.py locate gps
 """
@@ -54,7 +55,18 @@ async def main():
             print(f"Ring command sent: {result}")
 
         elif command == "lock":
-            result = await client.send_command("lock")
+            # Optional message; sanitize similar to Device.lock
+            msg = " ".join(sys.argv[2:]) if len(sys.argv) > 2 else None
+            cmd = "lock"
+            if msg:
+                sanitized = " ".join(msg.strip().split())
+                for ch in ['"', "'", "`", ";"]:
+                    sanitized = sanitized.replace(ch, "")
+                if len(sanitized) > 120:
+                    sanitized = sanitized[:120]
+                if sanitized:
+                    cmd = f"lock {sanitized}"
+            result = await client.send_command(cmd)
             print(f"Lock command sent: {result}")
 
         elif command == "camera":
@@ -91,10 +103,6 @@ async def main():
             mode = sys.argv[2].lower()
             result = await client.set_ringer_mode(mode)
             print(f"Ringer mode '{mode}' command sent: {result}")
-
-        elif command == "stats":
-            result = await client.get_device_stats()
-            print(f"Device stats command sent: {result}")
 
         elif command == "locate":
             provider = sys.argv[2].lower() if len(sys.argv) > 2 else "all"

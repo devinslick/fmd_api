@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+import warnings
 from typing import Optional, AsyncIterator, List, Dict, Any
 
 from .models import Location, PhotoResult
@@ -44,22 +45,7 @@ class Device:
 
         # decrypt and parse JSON
         decrypted = self.client.decrypt_data_blob(blobs[0])
-        loc = json.loads(decrypted)
-        # Build Location object with fields from README / fmd_api.py
-        timestamp_ms = loc.get("date")
-        ts = datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc) if timestamp_ms else None
-        self.cached_location = Location(
-            lat=loc["lat"],
-            lon=loc["lon"],
-            timestamp=ts,
-            accuracy_m=loc.get("accuracy"),
-            altitude_m=loc.get("altitude"),
-            speed_m_s=loc.get("speed"),
-            heading_deg=loc.get("heading"),
-            battery_pct=loc.get("bat"),
-            provider=loc.get("provider"),
-            raw=loc,
-        )
+        self.cached_location = Location.from_json(decrypted.decode("utf-8"))
 
     async def get_location(self, *, force: bool = False) -> Optional[Location]:
         if force or self.cached_location is None:
@@ -81,21 +67,7 @@ class Device:
         for b in blobs:
             try:
                 decrypted = self.client.decrypt_data_blob(b)
-                loc = json.loads(decrypted)
-                timestamp_ms = loc.get("date")
-                ts = datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc) if timestamp_ms else None
-                yield Location(
-                    lat=loc["lat"],
-                    lon=loc["lon"],
-                    timestamp=ts,
-                    accuracy_m=loc.get("accuracy"),
-                    altitude_m=loc.get("altitude"),
-                    speed_m_s=loc.get("speed"),
-                    heading_deg=loc.get("heading"),
-                    battery_pct=loc.get("bat"),
-                    provider=loc.get("provider"),
-                    raw=loc,
-                )
+                yield Location.from_json(decrypted.decode("utf-8"))
             except Exception as e:
                 # skip invalid blobs but log
                 raise OperationError(f"Failed to decrypt/parse location blob: {e}") from e
@@ -104,13 +76,28 @@ class Device:
         return await self.client.send_command("ring")
 
     async def take_front_photo(self) -> bool:
-        return await self.client.take_picture("front")
+        warnings.warn(
+            "Device.take_front_photo() is deprecated; use take_front_picture()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.take_front_picture()
 
     async def take_rear_photo(self) -> bool:
-        return await self.client.take_picture("back")
+        warnings.warn(
+            "Device.take_rear_photo() is deprecated; use take_rear_picture()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.take_rear_picture()
 
     async def fetch_pictures(self, num_to_get: int = -1) -> List[dict]:
-        return await self.client.get_pictures(num_to_get=num_to_get)
+        warnings.warn(
+            "Device.fetch_pictures() is deprecated; use get_picture_blobs()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.get_picture_blobs(num_to_get=num_to_get)
 
     async def download_photo(self, picture_blob_b64: str) -> PhotoResult:
         """
@@ -119,6 +106,45 @@ class Device:
         The fmd README says picture data is double-encoded: encrypted blob -> base64 string -> image bytes.
         We decrypt the blob to get a base64-encoded image string; decode that to bytes and return.
         """
+        warnings.warn(
+            "Device.download_photo() is deprecated; use decode_picture()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.decode_picture(picture_blob_b64)
+
+    async def take_front_picture(self) -> bool:
+        """Request a picture from the front camera."""
+        return await self.client.take_picture("front")
+
+    async def take_rear_picture(self) -> bool:
+        """Request a picture from the rear camera."""
+        return await self.client.take_picture("back")
+
+    async def get_pictures(self, num_to_get: int = -1) -> List[dict]:
+        """Deprecated: use get_picture_blobs()."""
+        warnings.warn(
+            "Device.get_pictures() is deprecated; use get_picture_blobs()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.get_picture_blobs(num_to_get=num_to_get)
+
+    async def get_picture(self, picture_blob_b64: str) -> PhotoResult:
+        """Deprecated: use decode_picture()."""
+        warnings.warn(
+            "Device.get_picture() is deprecated; use decode_picture()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.decode_picture(picture_blob_b64)
+
+    async def get_picture_blobs(self, num_to_get: int = -1) -> List[dict]:
+        """Get raw picture blobs (base64-encoded encrypted strings) from the server."""
+        return await self.client.get_pictures(num_to_get=num_to_get)
+
+    async def decode_picture(self, picture_blob_b64: str) -> PhotoResult:
+        """Decrypt and decode a single picture blob into a PhotoResult."""
         decrypted = self.client.decrypt_data_blob(picture_blob_b64)
         # decrypted is bytes, often containing a base64-encoded image (as text)
         try:
@@ -138,12 +164,49 @@ class Device:
             raise OperationError(f"Failed to decode picture blob: {e}") from e
 
     async def lock(self, message: Optional[str] = None, passcode: Optional[str] = None) -> bool:
-        # The original API supports "lock" command; it does not carry message/passcode in the current client
-        # Implementation preserves original behavior (sends "lock" command).
-        # Extensions can append data if server supports it.
-        return await self.client.send_command("lock")
+        """Lock the device, optionally passing a message (and future passcode).
 
-    async def wipe(self, confirm: bool = False) -> bool:
+        Notes:
+        - The public web UI may not expose message/passcode yet, but protocol-level
+          support is expected. We optimistically send a formatted command if a message
+          is provided: "lock <escaped>".
+        - Sanitization: collapse whitespace, limit length, and strip unsafe characters.
+        - If server ignores the payload, the base "lock" still executes.
+        - Passcode argument reserved for potential future support; currently unused.
+        """
+        base = "lock"
+        if message:
+            # Basic sanitization: trim, collapse internal whitespace, remove newlines
+            sanitized = " ".join(message.strip().split())
+            # Remove characters that could break command parsing (quotes/backticks/semicolons)
+            for ch in ['"', "'", "`", ";"]:
+                sanitized = sanitized.replace(ch, "")
+            # Cap length to 120 chars to avoid overly long command payloads
+            if len(sanitized) > 120:
+                sanitized = sanitized[:120]
+            if sanitized:
+                base = f"lock {sanitized}"
+        return await self.client.send_command(base)
+
+    async def wipe(self, pin: Optional[str] = None, *, confirm: bool = False) -> bool:
+        """Factory reset (delete) the device. Requires user confirmation and PIN.
+
+        The underlying command format (per Android client) is: `fmd delete <PIN>`.
+        Notes:
+        - The Delete feature must be enabled in the FMD Android client's General settings.
+        - A PIN is mandatory and must be sent when calling wipe(confirm=True).
+        - PIN must be alphanumeric ASCII (a-z, A-Z, 0-9) without spaces
+          This is a current and safe recommendation from fmd-foss maintainers.
+        - Future change: FMD Android will enforce 16+ character PIN length requirement
+          (https://gitlab.com/fmd-foss/fmd-android/-/merge_requests/379). Existing
+          shorter PINs may be grandfathered. This client will be updated accordingly.
+        """
         if not confirm:
             raise OperationError("wipe() requires confirm=True to proceed (destructive action)")
-        return await self.client.send_command("delete")
+        if not pin:
+            raise OperationError("wipe() requires a PIN: pass pin='yourPIN123'")
+        # Validate alphanumeric ASCII without spaces
+        if not all(ch.isalnum() and ord(ch) < 128 for ch in pin):
+            raise OperationError("PIN must contain only alphanumeric ASCII characters (a-z, A-Z, 0-9), no spaces")
+        command = f"fmd delete {pin}"
+        return await self.client.send_command(command)

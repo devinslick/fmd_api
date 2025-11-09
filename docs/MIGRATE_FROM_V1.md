@@ -67,14 +67,16 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 |----|----------------|-------------|-------|
 | `await api.send_command('ring')` | `await client.send_command('ring')` | `await device.play_sound()` | Device method preferred |
 | `await api.send_command('lock')` | `await client.send_command('lock')` | `await device.lock()` | Device method preferred |
-| `await api.send_command('delete')` | `await client.send_command('delete')` | `await device.wipe(confirm=True)` | **REQUIRES confirm flag** |
+| `await api.send_command('delete')` | `await client.send_command('fmd delete <PIN>')` | `await device.wipe(pin="YourSecurePIN", confirm=True)` | **Requires confirm + PIN (alphanumeric ASCII, no spaces)**. Future: 16+ char ([fmd-android#379](https://gitlab.com/fmd-foss/fmd-android/-/merge_requests/379)) |
 
 ### Camera Commands
 
 | V1 | V2 (FmdClient) | V2 (Device) | Notes |
 |----|----------------|-------------|-------|
-| `await api.take_picture('back')` | `await client.take_picture('back')` | `await device.take_rear_photo()` | Device method preferred |
-| `await api.take_picture('front')` | `await client.take_picture('front')` | `await device.take_front_photo()` | Device method preferred |
+| `await api.take_picture('back')` | `await client.take_picture('back')` | `await device.take_rear_picture()` | Device method preferred (old: take_rear_photo deprecated) |
+| `await api.take_picture('front')` | `await client.take_picture('front')` | `await device.take_front_picture()` | Device method preferred (old: take_front_photo deprecated) |
+> Note: `Device.lock(message=None)` now supports passing an optional message string. The server may ignore the
+> message if UI or server versions don't yet consume it, but the base lock command will still be executed.
 
 ### Bluetooth & Audio Settings
 
@@ -90,14 +92,8 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 
 | V1 | V2 (FmdClient) | V2 (Device) | Notes |
 |----|----------------|-------------|-------|
-| `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.fetch_pictures(10)` | Both available |
-| N/A | N/A | `await device.download_photo(blob)` | New helper method |
-
-### Device Stats
-
-| V1 | V2 | Notes |
-|----|----|-------|
-| `await api.get_device_stats()` | `await client.get_device_stats()` | Same method |
+| `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.get_picture_blobs(10)` | Both available (old: get_pictures/fetch_pictures deprecated) |
+| N/A | N/A | `await device.decode_picture(blob)` | Helper method (old: get_picture/download_photo deprecated) |
 
 ### Export Data
 
@@ -150,15 +146,15 @@ async for location in device.get_history(limit=10):
     print(f"Location at {location.date}: {location.lat}, {location.lon}")
 
 # Device commands
-await device.play_sound()                    # Ring device
-await device.take_rear_photo()               # Rear camera
-await device.take_front_photo()              # Front camera
-await device.lock(message="Lost device")     # Lock with message
-await device.wipe(confirm=True)              # Factory reset (DESTRUCTIVE)
+await device.play_sound()                         # Ring device
+await device.take_rear_picture()                  # Rear camera
+await device.take_front_picture()                 # Front camera
+await device.lock(message="Lost device")          # Lock with message
+await device.wipe(pin="YourSecurePIN", confirm=True)  # Factory reset (DESTRUCTIVE, alphanumeric ASCII PIN + enabled setting)
 
 # Pictures
-pictures = await device.fetch_pictures(10)
-photo_result = await device.download_photo(pictures[0])
+pictures = await device.get_picture_blobs(10)
+photo_result = await device.decode_picture(pictures[0])
 ```
 
 ---

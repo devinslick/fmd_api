@@ -292,6 +292,88 @@ async def test_take_picture_validation():
 
 
 @pytest.mark.asyncio
+async def test_json_response_non_dict_logging():
+    """Test JSON response handling when response is non-dict (array, etc)."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+
+    await client._ensure_session()
+    with aioresponses() as m:
+        # Return JSON array instead of dict
+        m.put("https://fmd.example.com/api/v1/pictures", payload=["item1", "item2"])
+
+        try:
+            result = await client.get_pictures()
+            # Should handle non-dict response gracefully
+            assert result == ["item1", "item2"]
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_pictures_non_list_response():
+    """Test get_pictures handles non-list response gracefully."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+
+    await client._ensure_session()
+    with aioresponses() as m:
+        # Return non-list response
+        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": "not-a-list"})
+
+        try:
+            result = await client.get_pictures()
+            # Should return empty list for unexpected type
+            assert result == []
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_export_data_zip_with_png(monkeypatch, tmp_path):
+    """Test export_data_zip detects PNG format correctly."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    client._fmd_id = "test-device"
+
+    class DummyKey:
+        def decrypt(self, packet, padding_obj):
+            return b"\x00" * 32
+
+    client.private_key = DummyKey()
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    session_key = b"\x00" * 32
+    aesgcm = AESGCM(session_key)
+    iv = b"\x01" * 12
+
+    # Create a PNG image (magic bytes: \x89PNG)
+    png_bytes = b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    png_b64 = base64.b64encode(png_bytes).decode("utf-8")
+    ciphertext = aesgcm.encrypt(iv, png_b64.encode("utf-8"), None)
+    blob = b"\xaa" * 384 + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8").rstrip("=")
+
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "0"})
+        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": [blob_b64]})
+
+        out_file = tmp_path / "export_png.zip"
+        try:
+            await client.export_data_zip(str(out_file))
+            import zipfile
+
+            with zipfile.ZipFile(out_file, "r") as zipf:
+                names = zipf.namelist()
+                # Should detect PNG and use .png extension
+                png_files = [n for n in names if n.endswith(".png")]
+                assert len(png_files) == 1
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
 async def test_set_ringer_mode_validation():
     """Test set_ringer_mode validates mode parameter."""
     client = FmdClient("https://fmd.example.com")
@@ -376,26 +458,6 @@ async def test_set_bluetooth_and_dnd():
             assert await client.set_bluetooth(False) is True
             assert await client.set_do_not_disturb(True) is True
             assert await client.set_do_not_disturb(False) is True
-        finally:
-            await client.close()
-
-
-@pytest.mark.asyncio
-async def test_get_device_stats():
-    """Test get_device_stats sends stats command."""
-    client = FmdClient("https://fmd.example.com")
-    client.access_token = "token"
-
-    class DummySigner:
-        def sign(self, message_bytes, pad, algo):
-            return b"\xab" * 64
-
-    client.private_key = DummySigner()
-
-    with aioresponses() as m:
-        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
-        try:
-            assert await client.get_device_stats() is True
         finally:
             await client.close()
 

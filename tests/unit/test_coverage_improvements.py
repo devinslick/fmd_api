@@ -523,6 +523,30 @@ async def test_send_command_with_missing_private_key():
 
 
 @pytest.mark.asyncio
+async def test_device_fetch_pictures_deprecated():
+    """Test fetch_pictures() deprecated wrapper emits warning."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    device = Device(client, "test-device")
+
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": ["blob1", "blob2"]})
+
+        try:
+            import warnings
+
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                result = await device.fetch_pictures(2)
+                assert len(w) == 1
+                assert issubclass(w[0].category, DeprecationWarning)
+                assert "fetch_pictures() is deprecated" in str(w[0].message)
+                assert len(result) == 2
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
 async def test_client_error_generic():
     """Test generic ClientError handling."""
     client = FmdClient("https://fmd.example.com")

@@ -46,7 +46,7 @@ async def test_device_refresh_and_get_location(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_device_fetch_and_download_picture(monkeypatch):
+async def test_device_get_and_decode_picture(monkeypatch):
     client = FmdClient("https://fmd.example.com")
     # Provide dummy private key that decrypts session packet into all-zero key
 
@@ -75,10 +75,10 @@ async def test_device_fetch_and_download_picture(monkeypatch):
         client.access_token = "token"
         device = Device(client, "alice")
         try:
-            pics = await device.fetch_pictures()
+            pics = await device.get_picture_blobs()
             assert len(pics) == 1
             # download the picture and verify we got PNGDATA bytes
-            photo = await device.download_photo(pics[0])
+            photo = await device.decode_picture(pics[0])
             assert photo.data == b"PNGDATA"
             assert photo.mime_type.startswith("image/")
         finally:
@@ -124,7 +124,7 @@ async def test_device_wipe_requires_confirm():
 
     # Should raise without confirm
     with pytest.raises(OperationError, match="wipe.*requires confirm=True"):
-        await device.wipe()
+        await device.wipe(pin="1234")
 
     # Should work with confirm
     client.access_token = "token"
@@ -138,7 +138,7 @@ async def test_device_wipe_requires_confirm():
     with aioresponses() as m:
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
         try:
-            assert await device.wipe(confirm=True) is True
+            assert await device.wipe(pin="1234", confirm=True) is True
         finally:
             await client.close()
 
@@ -344,7 +344,7 @@ async def test_device_refresh_without_force():
 
 @pytest.mark.asyncio
 async def test_device_picture_commands():
-    """Test Device picture-related command shortcuts."""
+    """Test Device picture-related command shortcuts (new names)."""
     client = FmdClient("https://fmd.example.com")
     client.access_token = "token"
 
@@ -358,16 +358,16 @@ async def test_device_picture_commands():
     device = Device(client, "test-device")
 
     with aioresponses() as m:
-        # take_front_photo
+        # take_front_picture
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
-        # take_rear_photo
+        # take_rear_picture
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
 
         try:
-            result1 = await device.take_front_photo()
+            result1 = await device.take_front_picture()
             assert result1 is True
 
-            result2 = await device.take_rear_photo()
+            result2 = await device.take_rear_picture()
             assert result2 is True
         finally:
             await client.close()
@@ -488,7 +488,7 @@ async def test_device_wipe_with_confirm():
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
 
         try:
-            result = await device.wipe(confirm=True)
+            result = await device.wipe(pin="1234", confirm=True)
             assert result is True
         finally:
             await client.close()
@@ -626,8 +626,8 @@ async def test_device_get_history_with_all_locations():
 
 
 @pytest.mark.asyncio
-async def test_device_fetch_pictures():
-    """Test Device.fetch_pictures method."""
+async def test_device_get_picture_blobs():
+    """Test Device.get_picture_blobs method."""
     client = FmdClient("https://fmd.example.com")
     client.access_token = "token"
 
@@ -639,7 +639,7 @@ async def test_device_fetch_pictures():
         m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": mock_pictures})
 
         try:
-            pictures = await device.fetch_pictures(num_to_get=1)
+            pictures = await device.get_picture_blobs(num_to_get=1)
             assert len(pictures) == 1
             assert pictures[0]["id"] == 0
         finally:
@@ -667,32 +667,6 @@ async def test_device_request_location_via_client():
         try:
             # Device doesn't have request_location, use client directly
             result = await device.client.request_location(provider="gps")
-            assert result is True
-        finally:
-            await client.close()
-
-
-@pytest.mark.asyncio
-async def test_device_get_stats_via_client():
-    """Test Device can use client's get_device_stats."""
-    client = FmdClient("https://fmd.example.com")
-    client.access_token = "token"
-
-    class DummySigner:
-        def sign(self, message_bytes, pad, algo):
-            return b"\xab" * 64
-
-    client.private_key = DummySigner()
-
-    await client._ensure_session()
-    device = Device(client, "test-device")
-
-    with aioresponses() as m:
-        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
-
-        try:
-            # Device doesn't have get_stats, use client's get_device_stats
-            result = await device.client.get_device_stats()
             assert result is True
         finally:
             await client.close()

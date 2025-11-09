@@ -26,7 +26,7 @@ from fmd_api import FmdClient
 
 async def main():
   # Recommended: async context manager auto-closes session
-  async with await FmdClient.create("https://fmd.example.com", "alice", "secret") as client:
+  async with await FmdClient.create("https://fmd.example.com", "alice", "secret", drop_password=True) as client:
     # Request a fresh GPS fix and wait a bit on your side
     await client.request_location("gps")
 
@@ -112,15 +112,36 @@ Tips:
     - `set_bluetooth(enable: bool)` — True = on, False = off
     - `set_do_not_disturb(enable: bool)` — True = on, False = off
     - `set_ringer_mode("normal|vibrate|silent")`
-    - `get_device_stats()`
 
+  > **Note:** Device statistics functionality (`get_device_stats()`) has been temporarily removed and will be restored when the FMD server supports it (see [fmd-server#74](https://gitlab.com/fmd-foss/fmd-server/-/issues/74)).
 
   - Low‑level: `decrypt_data_blob(b64_blob)`
 
 - `Device` helper (per‑device convenience)
   - `await device.refresh()` → hydrate cached state
   - `await device.get_location()` → parsed last location
-  - `await device.fetch_pictures(n)` + `await device.download_photo(item)`
+  - `await device.get_picture_blobs(n)` + `await device.decode_picture(blob)`
+  - Commands: `await device.play_sound()`, `await device.take_front_picture()`,
+    `await device.take_rear_picture()`, `await device.lock(message=None)`,
+    `await device.wipe(pin="YourSecurePIN", confirm=True)`
+    Note: wipe requires the FMD PIN (alphanumeric ASCII, no spaces) and must be enabled in the Android app's General settings.
+    Future versions may enforce a 16+ character PIN length ([fmd-android#379](https://gitlab.com/fmd-foss/fmd-android/-/merge_requests/379)).
+
+### Example: Lock device with a message
+
+```python
+import asyncio
+from fmd_api import FmdClient, Device
+
+async def main():
+  client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
+  device = Device(client, "alice")
+  # Optional message is sanitized (quotes/newlines removed, whitespace collapsed)
+  await device.lock(message="Lost phone. Please call +1-555-555-1234")
+  await client.close()
+
+asyncio.run(main())
+```
 
 ## Testing
 
@@ -157,6 +178,24 @@ pytest tests/unit/
   - AES‑GCM IV: 12 bytes; RSA packet size: 384 bytes
 - Password/key derivation with Argon2id
 - Robust HTTP JSON/text fallback and 401 re‑auth
+  - Supports password-free resume via exported auth artifacts (hash + token + private key)
+
+### Advanced: Password-Free Resume
+
+You can onboard once with a raw password, optionally discard it immediately using `drop_password=True`, export authentication artifacts, and later resume without storing the raw secret:
+
+```python
+client = await FmdClient.create(url, fmd_id, password, drop_password=True)
+artifacts = await client.export_auth_artifacts()
+
+# Persist `artifacts` securely (contains hash, token, private key)
+
+# Later / after restart
+client2 = await FmdClient.from_auth_artifacts(artifacts)
+locations = await client2.get_locations(1)
+```
+
+On a 401, the client will transparently reauthenticate using the stored Argon2id `password_hash` if available. When `drop_password=True`, the raw password is never retained after initial onboarding.
 
 ## Troubleshooting
 
@@ -170,5 +209,6 @@ This client targets the FMD ecosystem:
 - https://fmd-foss.org/
 - https://gitlab.com/fmd-foss
 - Public community instance: https://fmd.nulide.de/
+ - Listed on the official FMD community page: https://fmd-foss.org/docs/fmd-server/community
 
 MIT © 2025 Devin Slick

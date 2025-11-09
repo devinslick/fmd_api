@@ -18,7 +18,7 @@ Date: 2025-11-01
 
 Top-level components:
 - FmdClient: an async client that manages session, authentication tokens, request throttling, and device discovery.
-- Device: represents a single device and exposes async methods to interact with it (async refresh(), async play_sound(), async get_location(), async take_front_photo(), async take_rear_photo(), async lock_device(), async wipe_device(), etc).
+- Device: represents a single device and exposes async methods to interact with it (async refresh(), async play_sound(), async get_location(), async take_front_picture(), async take_rear_picture(), async lock_device(), async wipe_device(), etc).
 - Exceptions: typed exceptions for common error cases (AuthenticationError, DeviceNotFoundError, FmdApiError, RateLimitError).
 - Utilities: small helpers for caching, TTL-based per-device caches, retry/backoff, JSON parsing.
 
@@ -52,8 +52,8 @@ async def example():
     await device.play_sound()
 
     # Take front and rear photos
-    front = await device.take_front_photo()
-    rear = await device.take_rear_photo()
+  front = await device.take_front_picture()
+  rear = await device.take_rear_picture()
 
     # Lock device with message
     await device.lock_device(message="Lost phone — call me")
@@ -95,9 +95,9 @@ Core classes and signatures (proposal):
     - async get_location(self, *, force: bool = False) -> Optional[Location]
       - Returns last known location (calls refresh if expired or force=True)
     - async play_sound(self, *, volume: Optional[int] = None) -> None
-    - async take_front_photo(self) -> Optional[bytes]
+  - async take_front_picture(self) -> Optional[bytes]
       - Requests a front-facing photo; returns raw bytes of image if available.
-    - async take_rear_photo(self) -> Optional[bytes]
+  - async take_rear_picture(self) -> Optional[bytes]
       - Requests a rear-facing photo; returns raw bytes of image if available.
     - async lock_device(self, *, passcode: Optional[str] = None, message: Optional[str] = None) -> None
     - async wipe_device(self, *, confirm: bool = False) -> None
@@ -130,7 +130,7 @@ Core classes and signatures (proposal):
 - All request payloads, parsing, and business rules will reuse the logic currently implemented in the repository (parsing of responses, mapping fields to device properties, handling of play sound semantics, etc.). No functional changes to endpoints or command behavior are intended.
 - Where current code uses synchronous HTTP (requests), the new client will use asyncio/aiohttp to make non-blocking calls. Helpers will be introduced to convert existing request/response handling functions to async easily.
 - Device.refresh() mirrors current "get devices" and "refresh device" flows: fetch the device status endpoint, parse location, battery, and update fields.
-- Photo functions: take_front_photo() and take_rear_photo() call the corresponding FMD endpoints (if supported). They should return either a PhotoResult object (preferred) or None if not supported by the device/account. Implementations should include sensible timeouts and handle partial results gracefully.
+- Photo functions: take_front_picture() and take_rear_picture() call the corresponding FMD endpoints (if supported). They should return either a PhotoResult object (preferred) or None if not supported by the device/account. Implementations should include sensible timeouts and handle partial results gracefully.
 - Caching: to avoid hitting rate limits and reduce backend load, a per-device TTL cache will be implemented (configurable; default 30 seconds). get_location() uses cached data unless force=True or stale.
 - Rate limiting: a shared RateLimiter object will enforce a maximum requests-per-second or requests-per-minute per client instance. Simple token-bucket or asyncio.Semaphore + sleep-backoff will be sufficient.
 - Retries: transient HTTP errors will be retried with an exponential backoff (configurable; default 3 retries).
