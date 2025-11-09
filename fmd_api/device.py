@@ -93,11 +93,11 @@ class Device:
 
     async def fetch_pictures(self, num_to_get: int = -1) -> List[dict]:
         warnings.warn(
-            "Device.fetch_pictures() is deprecated; use get_pictures()",
+            "Device.fetch_pictures() is deprecated; use get_picture_blobs()",
             DeprecationWarning,
             stacklevel=2,
         )
-        return await self.get_pictures(num_to_get=num_to_get)
+        return await self.get_picture_blobs(num_to_get=num_to_get)
 
     async def download_photo(self, picture_blob_b64: str) -> PhotoResult:
         """
@@ -122,12 +122,28 @@ class Device:
         return await self.client.take_picture("back")
 
     async def get_pictures(self, num_to_get: int = -1) -> List[dict]:
-        """Get picture blobs (metadata) from the server.
-
-        Returns the raw list from the server (typically base64-encoded encrypted blobs)."""
-        return await self.client.get_pictures(num_to_get=num_to_get)
+        """Deprecated: use get_picture_blobs()."""
+        warnings.warn(
+            "Device.get_pictures() is deprecated; use get_picture_blobs()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.get_picture_blobs(num_to_get=num_to_get)
 
     async def get_picture(self, picture_blob_b64: str) -> PhotoResult:
+        """Deprecated: use decode_picture()."""
+        warnings.warn(
+            "Device.get_picture() is deprecated; use decode_picture()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.decode_picture(picture_blob_b64)
+
+    async def get_picture_blobs(self, num_to_get: int = -1) -> List[dict]:
+        """Get raw picture blobs (base64-encoded encrypted strings) from the server."""
+        return await self.client.get_pictures(num_to_get=num_to_get)
+
+    async def decode_picture(self, picture_blob_b64: str) -> PhotoResult:
         """Decrypt and decode a single picture blob into a PhotoResult."""
         decrypted = self.client.decrypt_data_blob(picture_blob_b64)
         # decrypted is bytes, often containing a base64-encoded image (as text)

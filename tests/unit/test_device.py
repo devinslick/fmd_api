@@ -75,10 +75,10 @@ async def test_device_get_and_decode_picture(monkeypatch):
         client.access_token = "token"
         device = Device(client, "alice")
         try:
-            pics = await device.get_pictures()
+            pics = await device.get_picture_blobs()
             assert len(pics) == 1
             # download the picture and verify we got PNGDATA bytes
-            photo = await device.get_picture(pics[0])
+            photo = await device.decode_picture(pics[0])
             assert photo.data == b"PNGDATA"
             assert photo.mime_type.startswith("image/")
         finally:
@@ -626,8 +626,8 @@ async def test_device_get_history_with_all_locations():
 
 
 @pytest.mark.asyncio
-async def test_device_get_pictures():
-    """Test Device.get_pictures method."""
+async def test_device_get_picture_blobs():
+    """Test Device.get_picture_blobs method."""
     client = FmdClient("https://fmd.example.com")
     client.access_token = "token"
 
@@ -639,7 +639,7 @@ async def test_device_get_pictures():
         m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": mock_pictures})
 
         try:
-            pictures = await device.get_pictures(num_to_get=1)
+            pictures = await device.get_picture_blobs(num_to_get=1)
             assert len(pictures) == 1
             assert pictures[0]["id"] == 0
         finally:

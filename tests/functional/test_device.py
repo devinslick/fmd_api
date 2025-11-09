@@ -32,11 +32,11 @@ async def main():
         loc = await device.get_location()
         print("Cached location:", loc)
         # fetch pictures and attempt to download the first one
-        pics = await device.get_pictures(5)
+        pics = await device.get_picture_blobs(5)
         print("Pictures listed:", len(pics))
         if pics:
             try:
-                photo = await device.get_picture(pics[0])
+                photo = await device.decode_picture(pics[0])
                 fn = "device_photo.jpg"
                 with open(fn, "wb") as f:
                     f.write(photo.data)

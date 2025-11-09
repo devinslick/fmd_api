@@ -92,8 +92,8 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 
 | V1 | V2 (FmdClient) | V2 (Device) | Notes |
 |----|----------------|-------------|-------|
-| `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.get_pictures(10)` | Both available (old: fetch_pictures deprecated) |
-| N/A | N/A | `await device.get_picture(blob)` | Helper method (old: download_photo deprecated) |
+| `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.get_picture_blobs(10)` | Both available (old: get_pictures/fetch_pictures deprecated) |
+| N/A | N/A | `await device.decode_picture(blob)` | Helper method (old: get_picture/download_photo deprecated) |
 
 ### Export Data
 
@@ -153,8 +153,8 @@ await device.lock(message="Lost device")     # Lock with message
 await device.wipe(confirm=True)              # Factory reset (DESTRUCTIVE)
 
 # Pictures
-pictures = await device.get_pictures(10)
-photo_result = await device.get_picture(pictures[0])
+pictures = await device.get_picture_blobs(10)
+photo_result = await device.decode_picture(pictures[0])
 ```
 
 ---
