@@ -44,22 +44,7 @@ class Device:
 
         # decrypt and parse JSON
         decrypted = self.client.decrypt_data_blob(blobs[0])
-        loc = json.loads(decrypted)
-        # Build Location object with fields from README / fmd_api.py
-        timestamp_ms = loc.get("date")
-        ts = datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc) if timestamp_ms else None
-        self.cached_location = Location(
-            lat=loc["lat"],
-            lon=loc["lon"],
-            timestamp=ts,
-            accuracy_m=loc.get("accuracy"),
-            altitude_m=loc.get("altitude"),
-            speed_m_s=loc.get("speed"),
-            heading_deg=loc.get("heading"),
-            battery_pct=loc.get("bat"),
-            provider=loc.get("provider"),
-            raw=loc,
-        )
+        self.cached_location = Location.from_json(decrypted.decode("utf-8"))
 
     async def get_location(self, *, force: bool = False) -> Optional[Location]:
         if force or self.cached_location is None:
@@ -81,21 +66,7 @@ class Device:
         for b in blobs:
             try:
                 decrypted = self.client.decrypt_data_blob(b)
-                loc = json.loads(decrypted)
-                timestamp_ms = loc.get("date")
-                ts = datetime.fromtimestamp(timestamp_ms / 1000.0, tz=timezone.utc) if timestamp_ms else None
-                yield Location(
-                    lat=loc["lat"],
-                    lon=loc["lon"],
-                    timestamp=ts,
-                    accuracy_m=loc.get("accuracy"),
-                    altitude_m=loc.get("altitude"),
-                    speed_m_s=loc.get("speed"),
-                    heading_deg=loc.get("heading"),
-                    battery_pct=loc.get("bat"),
-                    provider=loc.get("provider"),
-                    raw=loc,
-                )
+                yield Location.from_json(decrypted.decode("utf-8"))
             except Exception as e:
                 # skip invalid blobs but log
                 raise OperationError(f"Failed to decrypt/parse location blob: {e}") from e
