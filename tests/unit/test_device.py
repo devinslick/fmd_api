@@ -124,7 +124,7 @@ async def test_device_wipe_requires_confirm():
 
     # Should raise without confirm
     with pytest.raises(OperationError, match="wipe.*requires confirm=True"):
-        await device.wipe()
+        await device.wipe(pin="1234")
 
     # Should work with confirm
     client.access_token = "token"
@@ -138,7 +138,7 @@ async def test_device_wipe_requires_confirm():
     with aioresponses() as m:
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
         try:
-            assert await device.wipe(confirm=True) is True
+            assert await device.wipe(pin="1234", confirm=True) is True
         finally:
             await client.close()
 
@@ -488,7 +488,7 @@ async def test_device_wipe_with_confirm():
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
 
         try:
-            result = await device.wipe(confirm=True)
+            result = await device.wipe(pin="1234", confirm=True)
             assert result is True
         finally:
             await client.close()

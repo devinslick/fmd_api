@@ -188,7 +188,23 @@ class Device:
                 base = f"lock {sanitized}"
         return await self.client.send_command(base)
 
-    async def wipe(self, confirm: bool = False) -> bool:
+    async def wipe(self, pin: Optional[str] = None, *, confirm: bool = False) -> bool:
+        """Factory reset (delete) the device. Requires user confirmation and PIN.
+
+        The underlying command format (per Android client) is: `fmd delete <PIN>`.
+        Notes:
+        - The Delete feature must be enabled in the FMD Android client's General settings.
+        - A PIN is mandatory and must be sent when calling wipe(confirm=True).
+        - PIN is sanitized to digits only; must be 4-10 digits.
+        """
         if not confirm:
             raise OperationError("wipe() requires confirm=True to proceed (destructive action)")
-        return await self.client.send_command("delete")
+        if not pin:
+            raise OperationError("wipe() now requires a PIN: pass pin='1234' (digits only)")
+        sanitized = "".join(ch for ch in pin if ch.isdigit())
+        if sanitized != pin:
+            warnings.warn("PIN contained non-digit characters; they were removed.", DeprecationWarning, stacklevel=2)
+        if len(sanitized) < 4 or len(sanitized) > 10:
+            raise OperationError("PIN must be between 4 and 10 digits after sanitization")
+        command = f"fmd delete {sanitized}"
+        return await self.client.send_command(command)
