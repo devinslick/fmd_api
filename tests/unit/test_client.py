@@ -381,26 +381,6 @@ async def test_set_bluetooth_and_dnd():
 
 
 @pytest.mark.asyncio
-async def test_get_device_stats():
-    """Test get_device_stats sends stats command."""
-    client = FmdClient("https://fmd.example.com")
-    client.access_token = "token"
-
-    class DummySigner:
-        def sign(self, message_bytes, pad, algo):
-            return b"\xab" * 64
-
-    client.private_key = DummySigner()
-
-    with aioresponses() as m:
-        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
-        try:
-            assert await client.get_device_stats() is True
-        finally:
-            await client.close()
-
-
-@pytest.mark.asyncio
 async def test_decrypt_data_blob_too_small():
     """Test decrypt_data_blob raises FmdApiException for small blobs."""
     from fmd_api.exceptions import FmdApiException

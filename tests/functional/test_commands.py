@@ -9,8 +9,7 @@ Commands:
   camera <front|back>     - Take picture (default: back)
   bluetooth <on|off>      - Set Bluetooth on/off
   dnd <on|off>           - Set Do Not Disturb on/off
-  ringer <normal|vibrate|silent> - Set ringer mode
-  stats                   - Get device network statistics
+    ringer <normal|vibrate|silent> - Set ringer mode
   locate [all|gps|cell|last] - Request location update (default: all)
 
 Examples:
@@ -91,10 +90,6 @@ async def main():
             mode = sys.argv[2].lower()
             result = await client.set_ringer_mode(mode)
             print(f"Ringer mode '{mode}' command sent: {result}")
-
-        elif command == "stats":
-            result = await client.get_device_stats()
-            print(f"Device stats command sent: {result}")
 
         elif command == "locate":
             provider = sys.argv[2].lower() if len(sys.argv) > 2 else "all"

@@ -10,7 +10,7 @@ This module implements:
  - export_data_zip (streamed download)
  - send_command (RSA-PSS signing and POST to /api/v1/command)
  - convenience wrappers: request_location, set_bluetooth, set_do_not_disturb,
-     set_ringer_mode, get_device_stats, take_picture
+     set_ringer_mode, take_picture
 """
 
 from __future__ import annotations
@@ -655,10 +655,6 @@ class FmdClient:
         command = mode_map[mode]
         log.info(f"Setting ringer mode to: {mode}")
         return await self.send_command(command)
-
-    async def get_device_stats(self) -> bool:
-        log.info("Requesting device network statistics")
-        return await self.send_command("stats")
 
     async def take_picture(self, camera: str = "back") -> bool:
         camera = camera.lower()

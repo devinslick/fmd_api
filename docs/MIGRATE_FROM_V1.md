@@ -93,12 +93,6 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 | `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.fetch_pictures(10)` | Both available |
 | N/A | N/A | `await device.download_photo(blob)` | New helper method |
 
-### Device Stats
-
-| V1 | V2 | Notes |
-|----|----|-------|
-| `await api.get_device_stats()` | `await client.get_device_stats()` | Same method |
-
 ### Export Data
 
 | V1 | V2 | Notes |

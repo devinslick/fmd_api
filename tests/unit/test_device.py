@@ -673,32 +673,6 @@ async def test_device_request_location_via_client():
 
 
 @pytest.mark.asyncio
-async def test_device_get_stats_via_client():
-    """Test Device can use client's get_device_stats."""
-    client = FmdClient("https://fmd.example.com")
-    client.access_token = "token"
-
-    class DummySigner:
-        def sign(self, message_bytes, pad, algo):
-            return b"\xab" * 64
-
-    client.private_key = DummySigner()
-
-    await client._ensure_session()
-    device = Device(client, "test-device")
-
-    with aioresponses() as m:
-        m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
-
-        try:
-            # Device doesn't have get_stats, use client's get_device_stats
-            result = await device.client.get_device_stats()
-            assert result is True
-        finally:
-            await client.close()
-
-
-@pytest.mark.asyncio
 async def test_device_refresh_updates_cached_location():
     """Test that refresh() updates the cached location."""
     client = FmdClient("https://fmd.example.com")

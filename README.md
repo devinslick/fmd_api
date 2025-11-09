@@ -112,8 +112,8 @@ Tips:
     - `set_bluetooth(enable: bool)` — True = on, False = off
     - `set_do_not_disturb(enable: bool)` — True = on, False = off
     - `set_ringer_mode("normal|vibrate|silent")`
-    - `get_device_stats()`
 
+  > **Note:** Device statistics functionality (`get_device_stats()`) has been temporarily removed and will be restored when the FMD server supports it (see [fmd-server#74](https://gitlab.com/fmd-foss/fmd-server/-/issues/74)).
 
   - Low‑level: `decrypt_data_blob(b64_blob)`
 
