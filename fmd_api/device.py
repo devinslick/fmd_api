@@ -107,11 +107,11 @@ class Device:
         We decrypt the blob to get a base64-encoded image string; decode that to bytes and return.
         """
         warnings.warn(
-            "Device.download_photo() is deprecated; use get_picture()",
+            "Device.download_photo() is deprecated; use decode_picture()",
             DeprecationWarning,
             stacklevel=2,
         )
-        return await self.get_picture(picture_blob_b64)
+        return await self.decode_picture(picture_blob_b64)
 
     async def take_front_picture(self) -> bool:
         """Request a picture from the front camera."""
