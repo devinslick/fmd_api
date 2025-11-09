@@ -206,8 +206,6 @@ class Device:
         if not pin:
             raise OperationError("wipe() requires a PIN: pass pin='yourPIN123'")
         # Validate alphanumeric ASCII without spaces
-        if not pin:
-            raise OperationError("PIN cannot be empty")
         if not all(ch.isalnum() and ord(ch) < 128 for ch in pin):
             raise OperationError("PIN must contain only alphanumeric ASCII characters (a-z, A-Z, 0-9), no spaces")
         if " " in pin:
