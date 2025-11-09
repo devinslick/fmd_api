@@ -147,8 +147,8 @@ async for location in device.get_history(limit=10):
 
 # Device commands
 await device.play_sound()                         # Ring device
-await device.take_rear_photo()                    # Rear camera
-await device.take_front_photo()                   # Front camera
+await device.take_rear_picture()                  # Rear camera
+await device.take_front_picture()                 # Front camera
 await device.lock(message="Lost device")          # Lock with message
 await device.wipe(pin="YourSecurePIN", confirm=True)  # Factory reset (DESTRUCTIVE, alphanumeric ASCII PIN + enabled setting)
 
