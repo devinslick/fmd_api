@@ -73,8 +73,8 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 
 | V1 | V2 (FmdClient) | V2 (Device) | Notes |
 |----|----------------|-------------|-------|
-| `await api.take_picture('back')` | `await client.take_picture('back')` | `await device.take_rear_photo()` | Device method preferred |
-| `await api.take_picture('front')` | `await client.take_picture('front')` | `await device.take_front_photo()` | Device method preferred |
+| `await api.take_picture('back')` | `await client.take_picture('back')` | `await device.take_rear_picture()` | Device method preferred (old: take_rear_photo deprecated) |
+| `await api.take_picture('front')` | `await client.take_picture('front')` | `await device.take_front_picture()` | Device method preferred (old: take_front_photo deprecated) |
 > Note: `Device.lock(message=None)` now supports passing an optional message string. The server may ignore the
 > message if UI or server versions don't yet consume it, but the base lock command will still be executed.
 
@@ -92,8 +92,8 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 
 | V1 | V2 (FmdClient) | V2 (Device) | Notes |
 |----|----------------|-------------|-------|
-| `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.fetch_pictures(10)` | Both available |
-| N/A | N/A | `await device.download_photo(blob)` | New helper method |
+| `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.get_pictures(10)` | Both available (old: fetch_pictures deprecated) |
+| N/A | N/A | `await device.get_picture(blob)` | Helper method (old: download_photo deprecated) |
 
 ### Export Data
 
@@ -153,8 +153,8 @@ await device.lock(message="Lost device")     # Lock with message
 await device.wipe(confirm=True)              # Factory reset (DESTRUCTIVE)
 
 # Pictures
-pictures = await device.fetch_pictures(10)
-photo_result = await device.download_photo(pictures[0])
+pictures = await device.get_pictures(10)
+photo_result = await device.get_picture(pictures[0])
 ```
 
 ---

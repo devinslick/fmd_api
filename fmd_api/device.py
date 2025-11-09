@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+import warnings
 from typing import Optional, AsyncIterator, List, Dict, Any
 
 from .models import Location, PhotoResult
@@ -75,13 +76,28 @@ class Device:
         return await self.client.send_command("ring")
 
     async def take_front_photo(self) -> bool:
-        return await self.client.take_picture("front")
+        warnings.warn(
+            "Device.take_front_photo() is deprecated; use take_front_picture()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.take_front_picture()
 
     async def take_rear_photo(self) -> bool:
-        return await self.client.take_picture("back")
+        warnings.warn(
+            "Device.take_rear_photo() is deprecated; use take_rear_picture()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.take_rear_picture()
 
     async def fetch_pictures(self, num_to_get: int = -1) -> List[dict]:
-        return await self.client.get_pictures(num_to_get=num_to_get)
+        warnings.warn(
+            "Device.fetch_pictures() is deprecated; use get_pictures()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.get_pictures(num_to_get=num_to_get)
 
     async def download_photo(self, picture_blob_b64: str) -> PhotoResult:
         """
@@ -90,6 +106,29 @@ class Device:
         The fmd README says picture data is double-encoded: encrypted blob -> base64 string -> image bytes.
         We decrypt the blob to get a base64-encoded image string; decode that to bytes and return.
         """
+        warnings.warn(
+            "Device.download_photo() is deprecated; use get_picture()",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.get_picture(picture_blob_b64)
+
+    async def take_front_picture(self) -> bool:
+        """Request a picture from the front camera."""
+        return await self.client.take_picture("front")
+
+    async def take_rear_picture(self) -> bool:
+        """Request a picture from the rear camera."""
+        return await self.client.take_picture("back")
+
+    async def get_pictures(self, num_to_get: int = -1) -> List[dict]:
+        """Get picture blobs (metadata) from the server.
+
+        Returns the raw list from the server (typically base64-encoded encrypted blobs)."""
+        return await self.client.get_pictures(num_to_get=num_to_get)
+
+    async def get_picture(self, picture_blob_b64: str) -> PhotoResult:
+        """Decrypt and decode a single picture blob into a PhotoResult."""
         decrypted = self.client.decrypt_data_blob(picture_blob_b64)
         # decrypted is bytes, often containing a base64-encoded image (as text)
         try:

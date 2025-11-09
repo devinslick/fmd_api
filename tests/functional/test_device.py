@@ -1,5 +1,5 @@
 """
-Test: Device class flows (refresh, get_location, fetch_pictures, download_photo)
+Test: Device class flows (refresh, get_location, get_pictures, get_picture)
 Usage:
   python tests/functional/test_device.py
 """
@@ -32,17 +32,17 @@ async def main():
         loc = await device.get_location()
         print("Cached location:", loc)
         # fetch pictures and attempt to download the first one
-        pics = await device.fetch_pictures(5)
+        pics = await device.get_pictures(5)
         print("Pictures listed:", len(pics))
         if pics:
             try:
-                photo = await device.download_photo(pics[0])
+                photo = await device.get_picture(pics[0])
                 fn = "device_photo.jpg"
                 with open(fn, "wb") as f:
                     f.write(photo.data)
                 print("Saved device photo to", fn)
             except Exception as e:
-                print("Failed to download photo:", e)
+                print("Failed to get picture:", e)
     finally:
         await client.close()
 

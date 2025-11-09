@@ -120,9 +120,9 @@ Tips:
 - `Device` helper (per‑device convenience)
   - `await device.refresh()` → hydrate cached state
   - `await device.get_location()` → parsed last location
-  - `await device.fetch_pictures(n)` + `await device.download_photo(item)`
-  - Commands: `await device.play_sound()`, `await device.take_front_photo()`,
-    `await device.take_rear_photo()`, `await device.lock(message=None)`,
+  - `await device.get_pictures(n)` + `await device.get_picture(item)`
+  - Commands: `await device.play_sound()`, `await device.take_front_picture()`,
+    `await device.take_rear_picture()`, `await device.lock(message=None)`,
     `await device.wipe(confirm=True)`
 
 ### Example: Lock device with a message
