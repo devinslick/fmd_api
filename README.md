@@ -123,8 +123,9 @@ Tips:
   - `await device.get_picture_blobs(n)` + `await device.decode_picture(blob)`
   - Commands: `await device.play_sound()`, `await device.take_front_picture()`,
     `await device.take_rear_picture()`, `await device.lock(message=None)`,
-    `await device.wipe(pin="1234", confirm=True)`
-    Note: wipe requires the FMD PIN and must be enabled in the Android app's General settings.
+    `await device.wipe(pin="YourSecurePIN", confirm=True)`
+    Note: wipe requires the FMD PIN (alphanumeric ASCII, no spaces) and must be enabled in the Android app's General settings.
+    Future versions may enforce a 16+ character PIN length ([fmd-android#379](https://gitlab.com/fmd-foss/fmd-android/-/merge_requests/379)).
 
 ### Example: Lock device with a message
 

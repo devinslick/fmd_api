@@ -195,16 +195,22 @@ class Device:
         Notes:
         - The Delete feature must be enabled in the FMD Android client's General settings.
         - A PIN is mandatory and must be sent when calling wipe(confirm=True).
-        - PIN is sanitized to digits only; must be 4-10 digits.
+        - PIN must be alphanumeric ASCII (a-z, A-Z, 0-9) without spaces
+          This is a current and safe recommendation from fmd-foss maintainers.
+        - Future change: FMD Android will enforce 16+ character PIN length requirement
+          (https://gitlab.com/fmd-foss/fmd-android/-/merge_requests/379). Existing
+          shorter PINs may be grandfathered. This client will be updated accordingly.
         """
         if not confirm:
             raise OperationError("wipe() requires confirm=True to proceed (destructive action)")
         if not pin:
-            raise OperationError("wipe() now requires a PIN: pass pin='1234' (digits only)")
-        sanitized = "".join(ch for ch in pin if ch.isdigit())
-        if sanitized != pin:
-            warnings.warn("PIN contained non-digit characters; they were removed.", DeprecationWarning, stacklevel=2)
-        if len(sanitized) < 4 or len(sanitized) > 10:
-            raise OperationError("PIN must be between 4 and 10 digits after sanitization")
-        command = f"fmd delete {sanitized}"
+            raise OperationError("wipe() requires a PIN: pass pin='yourPIN123'")
+        # Validate alphanumeric ASCII without spaces
+        if not pin:
+            raise OperationError("PIN cannot be empty")
+        if not all(ch.isalnum() and ord(ch) < 128 for ch in pin):
+            raise OperationError("PIN must contain only alphanumeric ASCII characters (a-z, A-Z, 0-9), no spaces")
+        if " " in pin:
+            raise OperationError("PIN cannot contain spaces")
+        command = f"fmd delete {pin}"
         return await self.client.send_command(command)

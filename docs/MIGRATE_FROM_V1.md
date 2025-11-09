@@ -67,7 +67,7 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 |----|----------------|-------------|-------|
 | `await api.send_command('ring')` | `await client.send_command('ring')` | `await device.play_sound()` | Device method preferred |
 | `await api.send_command('lock')` | `await client.send_command('lock')` | `await device.lock()` | Device method preferred |
-| `await api.send_command('delete')` | `await client.send_command('fmd delete <PIN>')` | `await device.wipe(pin="1234", confirm=True)` | **Requires confirm + PIN (new)** |
+| `await api.send_command('delete')` | `await client.send_command('fmd delete <PIN>')` | `await device.wipe(pin="YourSecurePIN", confirm=True)` | **Requires confirm + PIN (alphanumeric ASCII, no spaces)**. Future: 16+ char ([fmd-android#379](https://gitlab.com/fmd-foss/fmd-android/-/merge_requests/379)) |
 
 ### Camera Commands
 
@@ -146,11 +146,11 @@ async for location in device.get_history(limit=10):
     print(f"Location at {location.date}: {location.lat}, {location.lon}")
 
 # Device commands
-await device.play_sound()                    # Ring device
-await device.take_rear_photo()               # Rear camera
-await device.take_front_photo()              # Front camera
-await device.lock(message="Lost device")     # Lock with message
-await device.wipe(pin="1234", confirm=True)  # Factory reset (DESTRUCTIVE, needs PIN + enabled setting)
+await device.play_sound()                         # Ring device
+await device.take_rear_photo()                    # Rear camera
+await device.take_front_photo()                   # Front camera
+await device.lock(message="Lost device")          # Lock with message
+await device.wipe(pin="YourSecurePIN", confirm=True)  # Factory reset (DESTRUCTIVE, alphanumeric ASCII PIN + enabled setting)
 
 # Pictures
 pictures = await device.get_picture_blobs(10)
