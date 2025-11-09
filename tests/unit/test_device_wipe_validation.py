@@ -78,6 +78,20 @@ async def test_wipe_rejects_invalid_pins():
 
 
 @pytest.mark.asyncio
+async def test_wipe_spaces_specific_error():
+    """Test that spaces in PIN trigger the alphanumeric error message."""
+    client = FmdClient("https://fmd.example.com")
+    device = Device(client, "test-device")
+
+    try:
+        # Space causes isalnum() to fail, hitting the alphanumeric check first
+        with pytest.raises(OperationError, match="alphanumeric ASCII"):
+            await device.wipe(pin="my pin", confirm=True)
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
 async def test_wipe_rejects_empty_pin():
     """Test that wipe rejects empty PIN."""
     client = FmdClient("https://fmd.example.com")
