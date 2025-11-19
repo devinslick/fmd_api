@@ -22,6 +22,7 @@ import logging
 import time
 import random
 from typing import Optional, List, Any, Dict, cast
+from types import TracebackType
 
 import aiohttp
 from argon2.low_level import hash_secret_raw, Type
@@ -96,7 +97,12 @@ class FmdClient:
     async def __aenter__(self) -> "FmdClient":
         return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[type[BaseException]],
+        exc: Optional[BaseException],
+        tb: Optional[TracebackType],
+    ) -> None:
         await self.close()
 
     @classmethod
@@ -114,7 +120,7 @@ class FmdClient:
         conn_limit_per_host: Optional[int] = None,
         keepalive_timeout: Optional[float] = None,
         drop_password: bool = False,
-    ):
+    ) -> "FmdClient":
         inst = cls(
             base_url,
             session_duration,
@@ -140,7 +146,7 @@ class FmdClient:
 
     async def _ensure_session(self) -> None:
         if self._session is None or self._session.closed:
-            connector_kwargs = {}
+            connector_kwargs: Dict[str, Any] = {}
             if self._ssl is not None:
                 connector_kwargs["ssl"] = self._ssl
             if self._conn_limit is not None:
@@ -186,7 +192,7 @@ class FmdClient:
     def _hash_password(self, password: str, salt: str) -> str:
         salt_bytes = base64.b64decode(_pad_base64(salt))
         password_bytes = (CONTEXT_STRING_LOGIN + password).encode("utf-8")
-        hash_bytes = hash_secret_raw(
+        hash_bytes: bytes = hash_secret_raw(
             secret=password_bytes,
             salt=salt_bytes,
             time_cost=1,
@@ -199,14 +205,16 @@ class FmdClient:
         return f"$argon2id$v=19$m=131072,t=1,p=4${salt}${hash_b64}"
 
     async def _get_salt(self, fmd_id: str) -> str:
-        return await self._make_api_request("PUT", "/api/v1/salt", {"IDT": fmd_id, "Data": ""})
+        return cast(str, await self._make_api_request("PUT", "/api/v1/salt", {"IDT": fmd_id, "Data": ""}))
 
     async def _get_access_token(self, fmd_id: str, password_hash: str, session_duration: int) -> str:
         payload = {"IDT": fmd_id, "Data": password_hash, "SessionDurationSeconds": session_duration}
-        return await self._make_api_request("PUT", "/api/v1/requestAccess", payload)
+        return cast(str, await self._make_api_request("PUT", "/api/v1/requestAccess", payload))
 
     async def _get_private_key_blob(self) -> str:
-        return await self._make_api_request("PUT", "/api/v1/key", {"IDT": self.access_token, "Data": "unused"})
+        return cast(
+            str, await self._make_api_request("PUT", "/api/v1/key", {"IDT": self.access_token, "Data": "unused"})
+        )
 
     def _decrypt_private_key_blob(self, key_b64: str, password: str) -> bytes:
         key_bytes = base64.b64decode(_pad_base64(key_b64))
@@ -379,7 +387,7 @@ class FmdClient:
         retry_auth: bool = True,
         timeout: Optional[float] = None,
         max_retries: Optional[int] = None,
-    ):
+    ) -> Any:
         """
         Makes an API request and returns Data or text depending on expect_json/stream.
         Mirrors get_all_locations/_make_api_request logic from original file (including 401 re-auth).
@@ -817,8 +825,8 @@ def _compute_backoff(base: float, attempt: int, max_delay: float, jitter: bool) 
     delay = min(max_delay, base * (2**attempt))
     if jitter:
         # Full jitter: random between 0 and delay
-        return random.uniform(0, delay)
-    return delay
+        return float(random.uniform(0, delay))
+    return float(delay)
 
 
 def _parse_retry_after(retry_after_header: Optional[str]) -> Optional[float]:

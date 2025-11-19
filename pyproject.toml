@@ -1,6 +1,6 @@
 [project]
 name = "fmd_api"
-version = "2.0.4"
+version = "2.0.5"
 authors = [{name = "devinslick"}]
 description = "A Python client for the FMD (Find My Device) server API"
 readme = "README.md"
@@ -79,3 +79,26 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+# Allow Any in tests for now
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false

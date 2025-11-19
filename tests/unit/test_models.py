@@ -1,13 +1,14 @@
 import json
 from datetime import timezone
+from typing import Dict, Any
 
 import pytest
 
 from fmd_api.models import Location
 
 
-def test_location_from_json_dict_basic():
-    data = {
+def test_location_from_json_dict_basic() -> None:
+    data: Dict[str, Any] = {
         "lat": 10.5,
         "lon": 20.25,
         "date": 1600000000000,  # ms since epoch
@@ -32,8 +33,8 @@ def test_location_from_json_dict_basic():
     assert loc.raw == data
 
 
-def test_location_from_json_string_basic():
-    payload = {
+def test_location_from_json_string_basic() -> None:
+    payload: Dict[str, Any] = {
         "lat": 1.0,
         "lon": 2.0,
         "date": 1600000000000,
@@ -45,8 +46,8 @@ def test_location_from_json_string_basic():
     assert loc.timestamp.tzinfo == timezone.utc
 
 
-def test_location_from_json_missing_optional_fields():
-    payload = {"lat": 0.0, "lon": 0.0, "date": 1600000000000}
+def test_location_from_json_missing_optional_fields() -> None:
+    payload: Dict[str, Any] = {"lat": 0.0, "lon": 0.0, "date": 1600000000000}
     loc = Location.from_json(payload)
     assert loc.accuracy_m is None
     assert loc.altitude_m is None
@@ -56,7 +57,15 @@ def test_location_from_json_missing_optional_fields():
     assert loc.provider is None
 
 
-def test_location_from_json_invalid_inputs():
+def test_location_from_json_no_date() -> None:
+    payload: Dict[str, Any] = {"lat": 1.0, "lon": 2.0}
+    loc = Location.from_json(payload)
+    assert loc.lat == 1.0
+    assert loc.lon == 2.0
+    assert loc.timestamp is None
+
+
+def test_location_from_json_invalid_inputs() -> None:
     with pytest.raises(TypeError):
         Location.from_json(123)  # type: ignore[arg-type]
 
