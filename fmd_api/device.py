@@ -33,7 +33,7 @@ class Device:
         self.cached_location: Optional[Location] = None
         self._last_refresh = None
 
-    async def refresh(self, *, force: bool = False):
+    async def refresh(self, *, force: bool = False) -> None:
         """Refresh the device's most recent location (uses client.get_locations(1))."""
         if not force and self.cached_location is not None:
             return
@@ -52,7 +52,9 @@ class Device:
             await self.refresh(force=force)
         return self.cached_location
 
-    async def get_history(self, start=None, end=None, limit: int = -1) -> AsyncIterator[Location]:
+    async def get_history(
+        self, start: Optional[Any] = None, end: Optional[Any] = None, limit: int = -1
+    ) -> AsyncIterator[Location]:
         """
         Iterate historical locations. Uses client.get_locations() under the hood.
         Yields decrypted Location objects newest-first (matches get_all_locations when requesting N recent).
@@ -91,7 +93,7 @@ class Device:
         )
         return await self.take_rear_picture()
 
-    async def fetch_pictures(self, num_to_get: int = -1) -> List[dict]:
+    async def fetch_pictures(self, num_to_get: int = -1) -> List[Dict[str, Any]]:
         warnings.warn(
             "Device.fetch_pictures() is deprecated; use get_picture_blobs()",
             DeprecationWarning,
@@ -121,7 +123,7 @@ class Device:
         """Request a picture from the rear camera."""
         return await self.client.take_picture("back")
 
-    async def get_pictures(self, num_to_get: int = -1) -> List[dict]:
+    async def get_pictures(self, num_to_get: int = -1) -> List[Dict[str, Any]]:
         """Deprecated: use get_picture_blobs()."""
         warnings.warn(
             "Device.get_pictures() is deprecated; use get_picture_blobs()",
@@ -139,7 +141,7 @@ class Device:
         )
         return await self.decode_picture(picture_blob_b64)
 
-    async def get_picture_blobs(self, num_to_get: int = -1) -> List[dict]:
+    async def get_picture_blobs(self, num_to_get: int = -1) -> List[Dict[str, Any]]:
         """Get raw picture blobs (base64-encoded encrypted strings) from the server."""
         return await self.client.get_pictures(num_to_get=num_to_get)
 

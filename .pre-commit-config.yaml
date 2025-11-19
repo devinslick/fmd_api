@@ -44,5 +44,5 @@ repos:
           - aiohttp
           - argon2-cffi
           - cryptography
-        args: ['--install-types', '--non-interactive']
+        args: ['--install-types', '--non-interactive', '--strict', '--show-error-codes']
         exclude: '^tests/'
