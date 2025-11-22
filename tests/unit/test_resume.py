@@ -127,6 +127,50 @@ async def test_from_auth_artifacts_missing_fields():
 
 
 @pytest.mark.asyncio
+async def test_from_auth_artifacts_invalid_types():
+    """If required artifact keys are present but of incorrect types, raise ValueError."""
+    # base_url is an int -> invalid
+    artifacts = {
+        "base_url": 123,
+        "fmd_id": "alice",
+        "access_token": "token",
+        "private_key": "pem-string",
+    }
+
+    with pytest.raises(ValueError, match="Missing or invalid artifact fields"):
+        await FmdClient.from_auth_artifacts(artifacts)
+
+
+@pytest.mark.asyncio
+async def test_from_auth_artifacts_nonint_session_duration_defaults():
+    """If session_duration isn't an int it should fall back to the default (3600)."""
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives import serialization
+
+    # Generate a valid key PEM so resume() can accept the artifact
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode("utf-8")
+
+    artifacts = {
+        "base_url": "https://fmd.example.com",
+        "fmd_id": "alice",
+        "access_token": "tkn1",
+        "private_key": pem,
+        "session_duration": "not-an-int",
+    }
+
+    resumed = await FmdClient.from_auth_artifacts(artifacts)
+    try:
+        assert resumed.session_duration == 3600
+    finally:
+        await resumed.close()
+
+
+@pytest.mark.asyncio
 async def test_export_artifacts_without_private_key():
     """Test export_auth_artifacts raises when private key not loaded."""
     from fmd_api.exceptions import FmdApiException

@@ -73,8 +73,8 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 
 | V1 | V2 (FmdClient) | V2 (Device) | Notes |
 |----|----------------|-------------|-------|
-| `await api.take_picture('back')` | `await client.take_picture('back')` | `await device.take_rear_picture()` | Device method preferred (old: take_rear_photo deprecated) |
-| `await api.take_picture('front')` | `await client.take_picture('front')` | `await device.take_front_picture()` | Device method preferred (old: take_front_photo deprecated) |
+| `await api.take_picture('back')` | `await client.take_picture('back')` | `await device.take_rear_picture()` | Device method preferred (legacy wrapper `take_rear_photo()` removed in v2.0.5) |
+| `await api.take_picture('front')` | `await client.take_picture('front')` | `await device.take_front_picture()` | Device method preferred (legacy wrapper `take_front_photo()` removed in v2.0.5) |
 > Note: `Device.lock(message=None)` now supports passing an optional message string. The server may ignore the
 > message if UI or server versions don't yet consume it, but the base lock command will still be executed.
 
@@ -92,8 +92,8 @@ client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
 
 | V1 | V2 (FmdClient) | V2 (Device) | Notes |
 |----|----------------|-------------|-------|
-| `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.get_picture_blobs(10)` | Both available (old: get_pictures/fetch_pictures deprecated) |
-| N/A | N/A | `await device.decode_picture(blob)` | Helper method (old: get_picture/download_photo deprecated) |
+| `await api.get_pictures(10)` | `await client.get_pictures(10)` | `await device.get_picture_blobs(10)` | Device wrapper methods `get_pictures()` / `fetch_pictures()` removed in v2.0.5 — use `get_picture_blobs()` |
+| N/A | N/A | `await device.decode_picture(blob)` | Helper method (legacy wrappers `get_picture()` / `download_photo()` removed in v2.0.5) |
 
 ### Export Data
 
@@ -153,8 +153,24 @@ await device.lock(message="Lost device")          # Lock with message
 await device.wipe(pin="YourSecurePIN", confirm=True)  # Factory reset (DESTRUCTIVE, alphanumeric ASCII PIN + enabled setting)
 
 # Pictures
+# V2: new client convenience methods provide both raw and metadata paths.
+#
+# - `get_picture_blobs(n)` returns raw server responses which may be either
+#   - a string (usually a base64-encoded encrypted blob), or
+#   - a dict/object containing metadata about the picture (id, date, filename, etc.)
+#
+# - `get_picture_metadata(n)` filters the raw values and returns only dict-like
+#   metadata entries exposed by the server. Use this when you only need structured
+#   metadata and don't want to handle raw encrypted blobs.
+#
+# Example: fetch raw blobs and decode the first picture
 pictures = await device.get_picture_blobs(10)
 photo_result = await device.decode_picture(pictures[0])
+
+# Example: fetch ONLY metadata entries (if server provides them)
+metadata_list = await device.get_picture_metadata(10)
+for meta in metadata_list:
+    print(f"Picture id={meta.get('id')}, date={meta.get('date')}, filename={meta.get('filename')}")
 ```
 
 ---

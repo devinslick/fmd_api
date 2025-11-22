@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/devinslick/fmd_api/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/devinslick/fmd_api/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/devinslick/fmd_api/branch/main/graph/badge.svg?token=8WA2TKXIOW)](https://codecov.io/gh/devinslick/fmd_api)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/fmd-api)](https://pypi.org/project/fmd-api/)
 
 Modern, async Python client for the open‑source FMD (Find My Device) server. It handles authentication, key management, encrypted data decryption, location/picture retrieval, and common device commands with safe, validated helpers.
 
@@ -12,11 +13,7 @@ Modern, async Python client for the open‑source FMD (Find My Device) server. I
   ```bash
   pip install fmd_api
   ```
-- Pre‑release (Test PyPI):
-  ```bash
-  pip install --pre --index-url https://test.pypi.org/simple/ \
-    --extra-index-url https://pypi.org/simple/ fmd_api
-  ```
+<!-- Pre-release via TestPyPI removed. Use stable releases from PyPI or GitHub Releases for pre-release artifacts -->
 
 ## Quickstart
 
@@ -32,7 +29,9 @@ async def main():
 
     # Fetch most recent locations and decrypt the latest
     blobs = await client.get_locations(num_to_get=1)
-    loc = json.loads(client.decrypt_data_blob(blobs[0]))
+    # decrypt_data_blob() returns raw bytes — decode then parse JSON for clarity
+    decrypted = client.decrypt_data_blob(blobs[0])
+    loc = json.loads(decrypted.decode("utf-8"))
     print(loc["lat"], loc["lon"], loc.get("accuracy"))
 
     # Take a picture (validated helper)
@@ -102,7 +101,7 @@ Tips:
 ## What’s in the box
 
 - `FmdClient` (primary API)
-  - Auth and key retrieval (salt → Argon2id → access token → private key decrypt)
+  - Auth and key retrieval (salt → Argon2id → access token → private key retrieval and decryption)
   - Decrypt blobs (RSA‑OAEP wrapped AES‑GCM)
   - Fetch data: `get_locations`, `get_pictures`
   - Export: `export_data_zip(out_path)` — client-side packaging of all locations/pictures into ZIP (mimics web UI, no server endpoint)
@@ -121,6 +120,13 @@ Tips:
   - `await device.refresh()` → hydrate cached state
   - `await device.get_location()` → parsed last location
   - `await device.get_picture_blobs(n)` + `await device.decode_picture(blob)`
+  - `await device.get_picture_metadata(n)` -> returns only metadata dicts (if the server exposes them)
+
+  IMPORTANT (breaking change in v2.0.5): legacy compatibility wrappers were removed.
+  The following legacy methods were removed from the `Device` API: `fetch_pictures`,
+  `get_pictures`, `download_photo`, `get_picture`, `take_front_photo`, and `take_rear_photo`.
+  Update your code to use `get_picture_blobs()`, `decode_picture()`, `take_front_picture()`
+  and `take_rear_picture()` instead.
   - Commands: `await device.play_sound()`, `await device.take_front_picture()`,
     `await device.take_rear_picture()`, `await device.lock(message=None)`,
     `await device.wipe(pin="YourSecurePIN", confirm=True)`
@@ -141,6 +147,35 @@ async def main():
   await client.close()
 
 asyncio.run(main())
+```
+
+### Example: Inspect pictures metadata (when available)
+
+Use `get_picture_blobs()` to fetch the raw server responses (strings or dicts). If you want a
+strongly-typed list of picture metadata objects (where the server provides metadata as JSON
+objects), use `get_picture_metadata()`, which filters for dict entries and returns only those.
+
+```python
+from fmd_api import FmdClient, Device
+
+async def inspect_metadata():
+  client = await FmdClient.create("https://fmd.example.com", "alice", "secret")
+  device = Device(client, "alice")
+
+  # Raw values may be strings (base64 blobs) or dicts (metadata). Keep raw when you need
+  # to decode or handle both forms yourself.
+  raw = await device.get_picture_blobs(10)
+
+  # If you want only metadata entries returned by the server, use get_picture_metadata().
+  # This returns a list of dict-like metadata objects (e.g. id/date/filename) and filters
+  # out any raw string blobs.
+  metadata = await device.get_picture_metadata(10)
+  for m in metadata:
+    print(m.get("id"), m.get("date"))
+
+  await client.close()
+
+asyncio.run(inspect_metadata())
 ```
 
 ## Testing
