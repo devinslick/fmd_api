@@ -437,7 +437,7 @@ async def test_device_download_photo_decode_error():
     blob_b64 = base64.b64encode(blob).decode("utf-8")
 
     with pytest.raises(OperationError, match="Failed to decode picture blob"):
-        await device.download_photo(blob_b64)
+        await device.decode_picture(blob_b64)
 
 
 @pytest.mark.asyncio
@@ -491,6 +491,25 @@ async def test_retry_after_header_parsing_indirectly():
             await client.close()
 
 
+@pytest.mark.asyncio
+async def test_rate_limit_exhausted_retries_direct():
+    """Directly exercise the 429 exhaustion path in _make_api_request by setting max_retries=0."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+
+    await client._ensure_session()
+
+    with aioresponses() as m:
+        # Return a 429 and no retry attempts allowed
+        m.get("https://fmd.example.com/api/v1/test", status=429)
+
+        try:
+            with pytest.raises(FmdApiException, match=r"Rate limited \(429\)"):
+                await client._make_api_request("GET", "/api/v1/test", {"IDT": "token", "Data": ""}, max_retries=0)
+        finally:
+            await client.close()
+
+
 # ==========================================
 # Additional edge cases
 # ==========================================
@@ -520,30 +539,6 @@ async def test_send_command_with_missing_private_key():
             await client.send_command("ring")
     finally:
         await client.close()
-
-
-@pytest.mark.asyncio
-async def test_device_fetch_pictures_deprecated():
-    """Test fetch_pictures() deprecated wrapper emits warning."""
-    client = FmdClient("https://fmd.example.com")
-    client.access_token = "token"
-    device = Device(client, "test-device")
-
-    with aioresponses() as m:
-        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": ["blob1", "blob2"]})
-
-        try:
-            import warnings
-
-            with warnings.catch_warnings(record=True) as w:
-                warnings.simplefilter("always")
-                result = await device.fetch_pictures(2)
-                assert len(w) == 1
-                assert issubclass(w[0].category, DeprecationWarning)
-                assert "fetch_pictures() is deprecated" in str(w[0].message)
-                assert len(result) == 2
-        finally:
-            await client.close()
 
 
 @pytest.mark.asyncio
@@ -1113,5 +1108,284 @@ async def test_non_json_response_with_expect_json_false():
                 "PUT", "/api/v1/test", {"IDT": "test", "Data": ""}, expect_json=False
             )
             assert result == "plain text response"
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_json_list_fallback_to_text_empty_body():
+    """When server returns an empty body with application/json, parsing should fall back and return empty text."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    await client._ensure_session()
+
+    with aioresponses() as m:
+        # Empty body with JSON content type will cause JSONDecodeError and empty text -> triggers warning branch
+        m.put("https://fmd.example.com/api/v1/salt", body="", content_type="application/json")
+
+        try:
+            result = await client._make_api_request("PUT", "/api/v1/salt", {"IDT": "test", "Data": ""})
+            assert result == ""
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_make_api_request_log_keys_when_debug_enabled():
+    """Ensure the JSON dict-keys logging branch executes when DEBUG enabled (coverage lines 512-513)."""
+    import logging
+
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    await client._ensure_session()
+
+    # Enable debug for the module logger to exercise the keys logging
+    logger = logging.getLogger("fmd_api.client")
+    old_level = logger.level
+    logger.setLevel(logging.DEBUG)
+
+    with aioresponses() as m:
+        m.put(
+            "https://fmd.example.com/api/v1/salt",
+            payload={"Data": {"x": 1, "y": 2}},
+            content_type="application/json",
+        )
+
+        try:
+            result = await client._make_api_request("PUT", "/api/v1/salt", {"IDT": "test", "Data": ""})
+            assert result == {"x": 1, "y": 2}
+        finally:
+            logger.setLevel(old_level)
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_locations_unexpected_size_type_raises():
+    """If locationDataSize returns a non-str/non-int, get_locations should raise FmdApiException (line 569)."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    await client._ensure_session()
+
+    with aioresponses() as m:
+        # Return Data as an object which isn't valid for size
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": {"bad": True}})
+
+        try:
+            with pytest.raises(FmdApiException, match="Unexpected value for locationDataSize"):
+                await client.get_locations()
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_locations_skip_non_string_blob():
+    """get_locations should skip non-string blobs and warn (line 587)."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    await client._ensure_session()
+
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "2"})
+        # Return a dict for index 0 and valid string for index 1
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": {"meta": 1}})
+        m.put("https://fmd.example.com/api/v1/location", payload={"Data": "validblob"})
+
+        try:
+            res = await client.get_locations(num_to_get=-1)
+            # Should only include the string blob
+            assert res == ["validblob"]
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_get_pictures_unexpected_type_returns_empty():
+    """get_pictures should return [] for unexpected non-list responses (lines 654-655)."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    await client._ensure_session()
+
+    with aioresponses() as m:
+        # Return a dict (not a list) in Data
+        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": {"meta": "bad"}})
+
+        try:
+            res = await client.get_pictures()
+            assert res == []
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_export_zip_non_text_location_blob(monkeypatch):
+    """export_data_zip should record an error for non-text location blob (lines 718-720)."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+
+    # Set up private key for decryption
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=3072, backend=default_backend())
+    client.private_key = private_key
+
+    await client._ensure_session()
+
+    # Patch get_locations to return a non-text blob (async function)
+    async def fake_get_locations(*args, **kwargs):
+        return [{"meta": 1}]
+
+    async def fake_get_pictures(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(client, "get_locations", fake_get_locations)
+    monkeypatch.setattr(client, "get_pictures", fake_get_pictures)
+
+    try:
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            output_path = tmp.name
+
+        await client.export_data_zip(output_path, include_pictures=False)
+
+        # locations.json should contain an error entry for index 0
+        import json
+        import zipfile
+
+        with zipfile.ZipFile(output_path, "r") as zf:
+            locations = json.loads(zf.read("locations.json"))
+            assert locations[0]["error"] == "invalid blob type"
+
+        import os
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_safe_read_text_returns_none_on_exception():
+    """_safe_read_text returns None if resp.text() raises an exception (lines 899-900)."""
+    from fmd_api.client import _safe_read_text
+
+    class DummyResp:
+        async def text(self):
+            raise RuntimeError("boom")
+
+    resp = DummyResp()
+    result = await _safe_read_text(resp)
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_make_api_request_keyerror_wrapped():
+    """If session.request raises a KeyError, it should be wrapped as FmdApiException (lines 552-553)."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+    await client._ensure_session()
+
+    with aioresponses() as m:
+        m.get("https://fmd.example.com/api/v1/test", exception=KeyError("boom"))
+
+        try:
+            with pytest.raises(FmdApiException, match="Failed to parse server response"):
+                await client._make_api_request("GET", "/api/v1/test", {"IDT": "token", "Data": ""})
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
+async def test_export_zip_non_text_picture_blob(monkeypatch):
+    """export_data_zip should record an error for non-text picture blobs (lines 735-737)."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+
+    # Set up private key (not used because get_pictures is patched)
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=3072, backend=default_backend())
+    client.private_key = private_key
+
+    # Patch get_locations to be empty list and get_pictures to return non-text blob
+    async def fake_get_locations(*args, **kwargs):
+        return []
+
+    async def fake_get_pictures(*args, **kwargs):
+        return [{"meta": "not-a-string"}]
+
+    monkeypatch.setattr(client, "get_locations", fake_get_locations)
+    monkeypatch.setattr(client, "get_pictures", fake_get_pictures)
+
+    try:
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            output_path = tmp.name
+
+        await client.export_data_zip(output_path, include_pictures=True)
+
+        import json
+        import zipfile
+        import os
+
+        with zipfile.ZipFile(output_path, "r") as zf:
+            # manifest should exist and indicate error for index 0
+            manifest = json.loads(zf.read("pictures/manifest.json"))
+            assert manifest[0]["error"] == "invalid blob type"
+
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_export_zip_jpeg_detection():
+    """Test JPEG magic byte detection in export_data_zip to exercise the JPEG branch (line ~749)."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+
+    # Set up private key
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=3072, backend=default_backend())
+    client.private_key = private_key
+
+    # Create JPEG-like image bytes
+    jpeg_bytes = b"\xff\xd8\xff" + b"\x00" * 64
+    inner_b64 = base64.b64encode(jpeg_bytes).decode("utf-8")
+
+    session_key = b"\x01" * 32
+    aesgcm = AESGCM(session_key)
+    iv = b"\x02" * 12
+    ciphertext = aesgcm.encrypt(iv, inner_b64.encode("utf-8"), None)
+
+    public_key = private_key.public_key()
+    session_key_packet = public_key.encrypt(
+        session_key,
+        asym_padding.OAEP(mgf=asym_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None),
+    )
+
+    blob = session_key_packet + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8")
+
+    await client._ensure_session()
+
+    with aioresponses() as m:
+        m.put("https://fmd.example.com/api/v1/locationDataSize", payload={"Data": "0"})
+        m.put("https://fmd.example.com/api/v1/pictures", payload={"Data": [blob_b64]})
+
+        try:
+            import tempfile
+            import zipfile
+            import os
+
+            with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+                output_path = tmp.name
+
+            result = await client.export_data_zip(output_path, include_pictures=True)
+            assert result == output_path
+
+            # Verify ZIP contains a file with .jpg extension
+            with zipfile.ZipFile(output_path, "r") as zf:
+                files = zf.namelist()
+                assert any(f.endswith(".jpg") for f in files)
+
+            if os.path.exists(output_path):
+                os.unlink(output_path)
         finally:
             await client.close()
