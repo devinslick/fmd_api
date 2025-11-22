@@ -21,7 +21,8 @@ import json
 import logging
 import time
 import random
-from typing import Optional, List, Any, Dict, cast
+from typing import Any, Optional, List, Dict, cast, Union
+import ssl
 from types import TracebackType
 
 import aiohttp
@@ -33,6 +34,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .helpers import _pad_base64
+from .types import JSONType, AuthArtifacts
 from .exceptions import FmdApiException
 
 # Constants copied from original module to ensure parity
@@ -57,11 +59,11 @@ class FmdClient:
         backoff_base: float = 0.5,
         backoff_max: float = 10.0,
         jitter: bool = True,
-        ssl: Optional[Any] = None,
+        ssl: Optional[Union[bool, ssl.SSLContext]] = None,
         conn_limit: Optional[int] = None,
         conn_limit_per_host: Optional[int] = None,
         keepalive_timeout: Optional[float] = None,
-    ):
+    ) -> None:
         # Enforce HTTPS only (FindMyDevice always uses TLS)
         if base_url.lower().startswith("http://"):
             raise ValueError("HTTPS is required for FmdClient base_url; plain HTTP is not allowed.")
@@ -115,7 +117,7 @@ class FmdClient:
         *,
         cache_ttl: int = 30,
         timeout: float = 30.0,
-        ssl: Optional[Any] = None,
+        ssl: Optional[Union[bool, ssl.SSLContext]] = None,
         conn_limit: Optional[int] = None,
         conn_limit_per_host: Optional[int] = None,
         keepalive_timeout: Optional[float] = None,
@@ -146,7 +148,8 @@ class FmdClient:
 
     async def _ensure_session(self) -> None:
         if self._session is None or self._session.closed:
-            connector_kwargs: Dict[str, Any] = {}
+            # Build TCPConnector with explicit arguments, only include values that are not None.
+            connector_kwargs: Dict[str, object] = {}
             if self._ssl is not None:
                 connector_kwargs["ssl"] = self._ssl
             if self._conn_limit is not None:
@@ -156,7 +159,10 @@ class FmdClient:
             if self._keepalive_timeout is not None:
                 connector_kwargs["keepalive_timeout"] = self._keepalive_timeout
 
-            connector = aiohttp.TCPConnector(**connector_kwargs)
+            # aiohttp's signature is fairly flexible; mypy can't easily verify **kwargs here.
+            # Use a cast to Any for the callsite so runtime behavior is unchanged but the
+            # type-checker won't complain about the dynamic set of keywords.
+            connector = aiohttp.TCPConnector(**cast(Any, connector_kwargs))
             self._session = aiohttp.ClientSession(connector=connector)
 
     async def close(self) -> None:
@@ -208,7 +214,11 @@ class FmdClient:
         return cast(str, await self._make_api_request("PUT", "/api/v1/salt", {"IDT": fmd_id, "Data": ""}))
 
     async def _get_access_token(self, fmd_id: str, password_hash: str, session_duration: int) -> str:
-        payload = {"IDT": fmd_id, "Data": password_hash, "SessionDurationSeconds": session_duration}
+        payload: Dict[str, JSONType] = {
+            "IDT": fmd_id,
+            "Data": password_hash,
+            "SessionDurationSeconds": session_duration,
+        }
         return cast(str, await self._make_api_request("PUT", "/api/v1/requestAccess", payload))
 
     async def _get_private_key_blob(self) -> str:
@@ -243,7 +253,7 @@ class FmdClient:
         session_duration: int = 3600,
         cache_ttl: int = 30,
         timeout: float = 30.0,
-        ssl: Optional[Any] = None,
+        ssl: Optional[Union[bool, ssl.SSLContext]] = None,
         conn_limit: Optional[int] = None,
         conn_limit_per_host: Optional[int] = None,
         keepalive_timeout: Optional[float] = None,
@@ -278,7 +288,7 @@ class FmdClient:
             inst.private_key = cast(RSAPrivateKey, serialization.load_der_private_key(pk_bytes, password=None))
         return inst
 
-    async def export_auth_artifacts(self) -> Dict[str, Any]:
+    async def export_auth_artifacts(self) -> AuthArtifacts:
         """Export current authentication artifacts for password-free resume."""
         pk = self.private_key
         if pk is None:
@@ -311,18 +321,44 @@ class FmdClient:
         }
 
     @classmethod
-    async def from_auth_artifacts(cls, artifacts: Dict[str, Any]) -> "FmdClient":
+    async def from_auth_artifacts(cls, artifacts: AuthArtifacts) -> "FmdClient":
         required = ["base_url", "fmd_id", "access_token", "private_key"]
         missing = [k for k in required if k not in artifacts]
         if missing:
             raise ValueError(f"Missing artifact fields: {missing}")
+        # Extract and validate required fields (TypedDict keys are optional so use .get()+assert)
+        # The TypedDict keys are optional, so fetch without indexing and perform runtime type checks
+        # Use Any-typed temporary variables so MyPy doesn't assume types from TypedDict keys
+        base_url_raw: Any = artifacts.get("base_url")
+        fmd_id_raw: Any = artifacts.get("fmd_id")
+        access_token_raw: Any = artifacts.get("access_token")
+        private_key_raw: Any = artifacts.get("private_key")
+
+        if (
+            not isinstance(base_url_raw, str)
+            or not isinstance(fmd_id_raw, str)
+            or not isinstance(access_token_raw, str)
+            or not isinstance(private_key_raw, str)
+        ):
+            raise ValueError("Missing or invalid artifact fields")
+
+        # Narrow to concrete types for resume() call
+        base_url = base_url_raw
+        fmd_id = fmd_id_raw
+        access_token = access_token_raw
+        private_key = private_key_raw
+        session_dur_raw: Any = artifacts.get("session_duration", 3600)
+        if not isinstance(session_dur_raw, int):
+            session_dur = 3600
+        else:
+            session_dur = session_dur_raw
         return await cls.resume(
-            artifacts["base_url"],
-            artifacts["fmd_id"],
-            artifacts["access_token"],
-            artifacts["private_key"],
+            base_url,
+            fmd_id,
+            access_token,
+            private_key,
             password_hash=artifacts.get("password_hash"),
-            session_duration=artifacts.get("session_duration", 3600),
+            session_duration=session_dur,
         )
 
     async def drop_password(self) -> None:
@@ -381,13 +417,13 @@ class FmdClient:
         self,
         method: str,
         endpoint: str,
-        payload: Any,
+        payload: Dict[str, JSONType],
         stream: bool = False,
         expect_json: bool = True,
         retry_auth: bool = True,
         timeout: Optional[float] = None,
         max_retries: Optional[int] = None,
-    ) -> Any:
+    ) -> JSONType:
         """
         Makes an API request and returns Data or text depending on expect_json/stream.
         Mirrors get_all_locations/_make_api_request logic from original file (including 401 re-auth).
@@ -413,6 +449,7 @@ class FmdClient:
                         if self._password:
                             log.info("401 received: re-auth with raw password...")
                             await self.authenticate(self._fmd_id, self._password, self.session_duration)
+                            # Narrow payload -> dict type ensured by signature
                             payload["IDT"] = self.access_token
                             return await self._make_api_request(
                                 method,
@@ -486,13 +523,18 @@ class FmdClient:
                         if expect_json:
                             # server sometimes reports wrong content-type -> force JSON parse
                             try:
+                                # Force JSON parse; narrow to dict/list cases to help static typing
                                 json_data = await resp.json(content_type=None)
-                                # Sanitize: don't log full JSON which may contain tokens/sensitive data
-                                if log.isEnabledFor(logging.DEBUG):
-                                    # Log safe metadata only
-                                    keys = list(json_data.keys()) if isinstance(json_data, dict) else "non-dict"
-                                    log.debug(f"{endpoint} JSON response received with keys: {keys}")
-                                return json_data["Data"]
+                                # Narrow to dict responses (expected standard API envelope)
+                                if isinstance(json_data, dict):
+                                    if log.isEnabledFor(logging.DEBUG):
+                                        # Log safe metadata only
+                                        keys = list(cast(Dict[str, JSONType], json_data).keys())
+                                        log.debug(f"{endpoint} JSON response received with keys: {keys}")
+                                    # Attempt to return the Data field; missing key will be handled below
+                                    return cast(JSONType, json_data["Data"])
+                                # Non-dict JSON (list/primitive) -> fall back to text parsing
+                                raise ValueError("JSON response not a dict; falling back to text")
                             except (KeyError, ValueError, json.JSONDecodeError) as e:
                                 # fall back to text
                                 log.debug(f"{endpoint} JSON parsing failed ({e}), trying as text")
@@ -508,8 +550,10 @@ class FmdClient:
                             log.debug(f"{endpoint} text response length: {len(text_data)}")
                             return text_data
                     else:
-                        # Return the aiohttp response for streaming consumers
-                        return resp
+                        # Return the aiohttp response for streaming consumers (rare; keep runtime
+                        # behavior but cast to JSONType for static typing so callers don't need
+                        # to handle a separate return value in our codebase).
+                        return cast(JSONType, resp)
             except aiohttp.ClientConnectionError as e:
                 # Transient connection issues -> retry if allowed (avoid unsafe command repeats)
                 if attempts_left > 0 and not (is_command and method.upper() == "POST"):
@@ -540,6 +584,9 @@ class FmdClient:
         size_str = await self._make_api_request(
             "PUT", "/api/v1/locationDataSize", {"IDT": self.access_token, "Data": ""}
         )
+        # Narrow type: ensure the response can be converted to int (it should be a str or int)
+        if not isinstance(size_str, (str, int)):
+            raise FmdApiException(f"Unexpected value for locationDataSize: {size_str!r}")
         size = int(size_str)
         log.debug(f"Server reports {size} locations available")
         if size == 0:
@@ -553,9 +600,15 @@ class FmdClient:
             for i in indices:
                 log.info(f"  - Downloading location at index {i}...")
                 blob = await self._make_api_request(
-                    "PUT", "/api/v1/location", {"IDT": self.access_token, "Data": str(i)}
+                    "PUT",
+                    "/api/v1/location",
+                    {"IDT": self.access_token, "Data": str(i)},
                 )
-                locations.append(blob)
+                # Only accept string blobs for locations; defensive check to make mypy happy
+                if isinstance(blob, str):
+                    locations.append(blob)
+                else:
+                    log.warning("Skipping non-string location blob returned by server")
             return locations
         else:
             num_to_download = min(num_to_get, size)
@@ -575,7 +628,9 @@ class FmdClient:
         for i in indices:
             log.info(f"  - Downloading location at index {i}...")
             blob = await self._make_api_request("PUT", "/api/v1/location", {"IDT": self.access_token, "Data": str(i)})
-            log.debug(f"Received blob type: {type(blob)}, length: {len(blob) if blob else 0}")
+            log.debug(
+                f"Received blob type: {type(blob)}, length: {len(blob) if isinstance(blob, (str, list, dict)) else 0}"
+            )
             if blob and isinstance(blob, str) and blob.strip():
                 log.debug(f"First 100 chars: {blob[:100]}")
                 locations.append(blob)
@@ -583,14 +638,15 @@ class FmdClient:
                 if len(locations) >= num_to_get and num_to_get != -1:
                     break
             else:
-                log.warning(f"Empty blob received for location index {i}, repr: {repr(blob[:50] if blob else blob)}")
+                sample = blob[:50] if isinstance(blob, (str, list, tuple, bytes)) else blob
+                log.warning(f"Empty blob received for location index {i}, repr: {repr(sample)}")
 
         if not locations and num_to_get != -1:
             log.warning(f"No valid locations found after checking " f"{min(max_attempts, size)} indices")
 
         return locations
 
-    async def get_pictures(self, num_to_get: int = -1, timeout: Optional[float] = None) -> List[Any]:
+    async def get_pictures(self, num_to_get: int = -1, timeout: Optional[float] = None) -> List[JSONType]:
         """Fetches all or the N most recent picture metadata blobs (raw server response)."""
         req_timeout = aiohttp.ClientTimeout(total=timeout if timeout is not None else self.timeout)
         try:
@@ -603,15 +659,22 @@ class FmdClient:
                 resp.raise_for_status()
                 json_data = await resp.json()
                 # Extract the Data field if it exists, otherwise use the response as-is
-                all_pictures = json_data.get("Data", json_data) if isinstance(json_data, dict) else json_data
+                if isinstance(json_data, dict):
+                    json_data_dict = cast(Dict[str, JSONType], json_data)
+                    maybe: JSONType = json_data_dict.get("Data", json_data_dict)
+                else:
+                    maybe = json_data
+
+                if not isinstance(maybe, list):
+                    log.warning(f"Unexpected pictures response type: {type(maybe)}")
+                    return []
+                all_pictures: List[JSONType] = maybe
         except aiohttp.ClientError as e:
             log.warning(f"Failed to get pictures: {e}. The endpoint may not exist or requires a different method.")
             return []
 
-        # Ensure all_pictures is a list
-        if not isinstance(all_pictures, list):
-            log.warning(f"Unexpected pictures response type: {type(all_pictures)}")
-            return []
+        # all_pictures is assigned in the try/except above and validated to be a list
+        # (the prior checks already ensure we only reach here when it's a list).
 
         if num_to_get == -1:
             log.info(f"Found {len(all_pictures)} pictures to download.")
@@ -657,10 +720,10 @@ class FmdClient:
 
             # Fetch all locations
             log.info("Fetching all locations...")
-            location_blobs = await self.get_locations(num_to_get=-1, skip_empty=False)
+            location_blobs = cast(List[JSONType], await self.get_locations(num_to_get=-1, skip_empty=False))
 
             # Fetch all pictures if requested
-            picture_blobs = []
+            picture_blobs: List[JSONType] = []
             if include_pictures:
                 log.info("Fetching all pictures...")
                 picture_blobs = await self.get_pictures(num_to_get=-1)
@@ -669,12 +732,16 @@ class FmdClient:
             log.info(f"Creating export ZIP at {out_path}...")
             with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 # Decrypt and add readable locations
-                decrypted_locations = []
+                decrypted_locations: List[JSONType] = []
                 if location_blobs:
                     log.info(f"Decrypting {len(location_blobs)} locations...")
-                    for i, blob in enumerate(location_blobs):
+                    for i, loc_blob in enumerate(location_blobs):
+                        if not isinstance(loc_blob, str):
+                            log.warning(f"Skipping non-text location blob at index {i}")
+                            decrypted_locations.append({"error": "invalid blob type", "index": i})
+                            continue
                         try:
-                            decrypted = self.decrypt_data_blob(blob)
+                            decrypted = self.decrypt_data_blob(loc_blob)
                             loc_data = json.loads(decrypted)
                             decrypted_locations.append(loc_data)
                         except Exception as e:
@@ -682,12 +749,16 @@ class FmdClient:
                             decrypted_locations.append({"error": str(e), "index": i})
 
                 # Decrypt and extract pictures as image files
-                picture_file_list = []
+                picture_file_list: List[Dict[str, JSONType]] = []
                 if picture_blobs:
                     log.info(f"Decrypting and extracting {len(picture_blobs)} pictures...")
-                    for i, blob in enumerate(picture_blobs):
+                    for i, pic_blob in enumerate(picture_blobs):
+                        if not isinstance(pic_blob, str):
+                            log.warning(f"Skipping non-text picture blob at index {i}")
+                            picture_file_list.append({"index": i, "error": "invalid blob type"})
+                            continue
                         try:
-                            decrypted = self.decrypt_data_blob(blob)
+                            decrypted = self.decrypt_data_blob(pic_blob)
                             # Pictures are double-encoded: decrypt -> base64 string -> image bytes
                             inner_b64 = decrypted.decode("utf-8").strip()
                             from .helpers import b64_decode_padded
@@ -711,7 +782,7 @@ class FmdClient:
                             picture_file_list.append({"index": i, "error": str(e)})
 
                 # Add metadata file (after processing so we have accurate counts)
-                export_info = {
+                export_info: Dict[str, JSONType] = {
                     "export_date": datetime.now().isoformat(),
                     "fmd_id": self._fmd_id,
                     "location_count": len(location_blobs),

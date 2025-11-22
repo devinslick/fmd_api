@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Union
+from .types import JSONType
 import json as _json
 
 
@@ -15,10 +16,10 @@ class Location:
     heading_deg: Optional[float] = None
     battery_pct: Optional[int] = None
     provider: Optional[str] = None
-    raw: Optional[Dict[str, Any]] = None
+    raw: Optional[Dict[str, JSONType]] = None
 
     @classmethod
-    def from_json(cls, json: Union[str, Dict[str, Any]]) -> "Location":
+    def from_json(cls, json: Union[str, Dict[str, JSONType]]) -> "Location":
         """Construct a Location from a JSON dict or JSON string.
 
         Expected fields (from server payloads):
@@ -68,4 +69,4 @@ class PhotoResult:
     data: bytes
     mime_type: str
     timestamp: datetime
-    raw: Optional[Dict[str, Any]] = None
+    raw: Optional[Dict[str, JSONType]] = None

@@ -86,6 +86,36 @@ async def test_device_get_and_decode_picture(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_get_picture_blobs_and_metadata_mix(monkeypatch):
+    """Ensure get_picture_blobs returns raw values (strings/dicts) and get_picture_metadata filters to dicts."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+
+    # Blob string and metadata dict
+    blob_str = "somestringblob"
+    metadata = {"id": 42, "date": 1600000000000}
+
+    await client._ensure_session()
+    device = Device(client, "alice")
+
+    with aioresponses() as m:
+        # Register the same mock for two calls (get_picture_blobs then get_picture_metadata)
+        m.put("https://fmd.example.com/api/v1/pictures", payload=[blob_str, metadata], repeat=True)
+        try:
+            raw = await device.get_picture_blobs()
+            assert len(raw) == 2
+            assert raw[0] == blob_str
+            assert isinstance(raw[1], dict)
+
+            # metadata method should only return dicts
+            md = await device.get_picture_metadata()
+            assert len(md) == 1
+            assert md[0]["id"] == 42
+        finally:
+            await client.close()
+
+
+@pytest.mark.asyncio
 async def test_device_command_wrappers():
     """Test Device command wrapper methods."""
     client = FmdClient("https://fmd.example.com")
@@ -107,8 +137,8 @@ async def test_device_command_wrappers():
         m.post("https://fmd.example.com/api/v1/command", status=200, body="OK")
         try:
             assert await device.play_sound() is True
-            assert await device.take_front_photo() is True
-            assert await device.take_rear_photo() is True
+            assert await device.take_front_picture() is True
+            assert await device.take_rear_picture() is True
             assert await device.lock() is True
         finally:
             await client.close()

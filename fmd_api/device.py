@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-import warnings
-from typing import Optional, AsyncIterator, List, Dict, Any
+from typing import Optional, AsyncIterator, List, Dict, Union, cast
+from .types import JSONType, PictureMetadata
 
 from .models import Location, PhotoResult
 from .exceptions import OperationError
@@ -25,10 +25,10 @@ def _parse_location_blob(blob_b64: str) -> Location:
 
 
 class Device:
-    def __init__(self, client: FmdClient, fmd_id: str, raw: Optional[Dict[str, Any]] = None):
+    def __init__(self, client: FmdClient, fmd_id: str, raw: Optional[Dict[str, JSONType]] = None) -> None:
         self.client = client
         self.id = fmd_id
-        self.raw: Dict[str, Any] = raw or {}
+        self.raw: Dict[str, JSONType] = raw or {}
         self.name = self.raw.get("name")
         self.cached_location: Optional[Location] = None
         self._last_refresh = None
@@ -53,7 +53,7 @@ class Device:
         return self.cached_location
 
     async def get_history(
-        self, start: Optional[Any] = None, end: Optional[Any] = None, limit: int = -1
+        self, start: Optional[Union[int, datetime]] = None, end: Optional[Union[int, datetime]] = None, limit: int = -1
     ) -> AsyncIterator[Location]:
         """
         Iterate historical locations. Uses client.get_locations() under the hood.
@@ -77,44 +77,6 @@ class Device:
     async def play_sound(self) -> bool:
         return await self.client.send_command("ring")
 
-    async def take_front_photo(self) -> bool:
-        warnings.warn(
-            "Device.take_front_photo() is deprecated; use take_front_picture()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return await self.take_front_picture()
-
-    async def take_rear_photo(self) -> bool:
-        warnings.warn(
-            "Device.take_rear_photo() is deprecated; use take_rear_picture()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return await self.take_rear_picture()
-
-    async def fetch_pictures(self, num_to_get: int = -1) -> List[Dict[str, Any]]:
-        warnings.warn(
-            "Device.fetch_pictures() is deprecated; use get_picture_blobs()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return await self.get_picture_blobs(num_to_get=num_to_get)
-
-    async def download_photo(self, picture_blob_b64: str) -> PhotoResult:
-        """
-        Decrypt a picture blob and return binary PhotoResult.
-
-        The fmd README says picture data is double-encoded: encrypted blob -> base64 string -> image bytes.
-        We decrypt the blob to get a base64-encoded image string; decode that to bytes and return.
-        """
-        warnings.warn(
-            "Device.download_photo() is deprecated; use decode_picture()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return await self.decode_picture(picture_blob_b64)
-
     async def take_front_picture(self) -> bool:
         """Request a picture from the front camera."""
         return await self.client.take_picture("front")
@@ -123,27 +85,26 @@ class Device:
         """Request a picture from the rear camera."""
         return await self.client.take_picture("back")
 
-    async def get_pictures(self, num_to_get: int = -1) -> List[Dict[str, Any]]:
-        """Deprecated: use get_picture_blobs()."""
-        warnings.warn(
-            "Device.get_pictures() is deprecated; use get_picture_blobs()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return await self.get_picture_blobs(num_to_get=num_to_get)
+    async def get_picture_blobs(self, num_to_get: int = -1) -> List[JSONType]:
+        """Get raw picture blobs (usually a list of dicts returned by the server).
 
-    async def get_picture(self, picture_blob_b64: str) -> PhotoResult:
-        """Deprecated: use decode_picture()."""
-        warnings.warn(
-            "Device.get_picture() is deprecated; use decode_picture()",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return await self.decode_picture(picture_blob_b64)
+        The client may return lists of mixed JSON values; coerce/filter here so callers
+        (and the annotated return type) are guaranteed a list of dicts.
+        """
+        # Return raw server values (strings, dicts, etc.) — callers like decode_picture
+        # expect string blobs and some server versions return dicts; preserve this.
+        raw = await self.client.get_pictures(num_to_get=num_to_get)
+        return list(raw)
 
-    async def get_picture_blobs(self, num_to_get: int = -1) -> List[Dict[str, Any]]:
-        """Get raw picture blobs (base64-encoded encrypted strings) from the server."""
-        return await self.client.get_pictures(num_to_get=num_to_get)
+    async def get_picture_metadata(self, num_to_get: int = -1) -> List[PictureMetadata]:
+        """Return only picture entries that are JSON objects (dicts) — strongly typed metadata.
+
+        This method intentionally filters the raw values returned by `get_picture_blobs` and
+        yields only mappings (dicts), which callers can rely on for metadata fields.
+        """
+        raw = await self.client.get_pictures(num_to_get=num_to_get)
+        metadata: List[PictureMetadata] = [cast(PictureMetadata, p) for p in raw if isinstance(p, dict)]
+        return metadata
 
     async def decode_picture(self, picture_blob_b64: str) -> PhotoResult:
         """Decrypt and decode a single picture blob into a PhotoResult."""
