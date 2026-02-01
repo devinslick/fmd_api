@@ -145,7 +145,6 @@ class FmdClient:
         Raises:
             ValueError: If base_url uses HTTP instead of HTTPS.
             FmdApiException: If authentication fails or server returns an error.
-            aiohttp.ClientError: If a network error occurs.
             asyncio.TimeoutError: If the request times out.
         """
         inst = cls(
@@ -215,7 +214,6 @@ class FmdClient:
 
         Raises:
             FmdApiException: If authentication fails or server returns an error.
-            aiohttp.ClientError: If a network error occurs.
             asyncio.TimeoutError: If the request times out.
         """
         log.info("[1] Requesting salt...")
@@ -493,7 +491,7 @@ class FmdClient:
         Raises:
             FmdApiException: If private key not loaded, blob too small, or decryption fails.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.decrypt_data_blob, data_b64)
 
     # -------------------------
@@ -675,7 +673,6 @@ class FmdClient:
 
         Raises:
             FmdApiException: If server returns an error or unexpected response.
-            aiohttp.ClientError: If a network error occurs.
             asyncio.TimeoutError: If the request times out.
         """
         log.debug(f"Getting locations, num_to_get={num_to_get}, " f"skip_empty={skip_empty}")
@@ -753,10 +750,8 @@ class FmdClient:
             timeout: Custom timeout for this request (uses client default if None).
 
         Returns:
-            List of picture blobs (may be base64 strings or metadata dicts).
-
-        Raises:
-            aiohttp.ClientError: If a network error occurs (returns empty list).
+            List of picture blobs (may be base64 strings or metadata dicts), or an empty
+            list if a network or HTTP error occurs.
         """
         req_timeout = aiohttp.ClientTimeout(total=timeout if timeout is not None else self.timeout)
         try:

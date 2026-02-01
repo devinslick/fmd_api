@@ -70,7 +70,7 @@ class Device:
 
         for b in blobs:
             try:
-                decrypted = self.client.decrypt_data_blob(b)
+                decrypted = await self.client.decrypt_data_blob_async(b)
                 yield Location.from_json(decrypted.decode("utf-8"))
             except Exception as e:
                 # skip invalid blobs but log
