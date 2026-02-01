@@ -385,7 +385,18 @@ class FmdClient:
         """
         Decrypts a location or picture data blob using the instance's private key.
 
-        Raises FmdApiException on problems (matches original behavior).
+        This method performs CPU-intensive RSA and AES operations synchronously.
+        For async contexts (like Home Assistant), use decrypt_data_blob_async() instead
+        to avoid blocking the event loop.
+
+        Args:
+            data_b64: Base64-encoded encrypted blob from the server.
+
+        Returns:
+            Decrypted plaintext bytes.
+
+        Raises:
+            FmdApiException: If private key not loaded, blob too small, or decryption fails.
         """
         blob = base64.b64decode(_pad_base64(data_b64))
 
@@ -409,6 +420,25 @@ class FmdClient:
         )
         aesgcm = AESGCM(session_key)
         return aesgcm.decrypt(iv, ciphertext, None)
+
+    async def decrypt_data_blob_async(self, data_b64: str) -> bytes:
+        """
+        Async wrapper for decrypt_data_blob that runs decryption in a thread executor.
+
+        This prevents blocking the event loop during CPU-intensive RSA/AES operations.
+        Recommended for use in async contexts like Home Assistant integrations.
+
+        Args:
+            data_b64: Base64-encoded encrypted blob from the server.
+
+        Returns:
+            Decrypted plaintext bytes.
+
+        Raises:
+            FmdApiException: If private key not loaded, blob too small, or decryption fails.
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self.decrypt_data_blob, data_b64)
 
     # -------------------------
     # HTTP helper

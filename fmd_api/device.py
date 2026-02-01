@@ -8,20 +8,13 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Optional, AsyncIterator, List, Dict, Union, cast
+from typing import Optional, AsyncIterator, List, Dict, cast
 from .types import JSONType, PictureMetadata
 
 from .models import Location, PhotoResult
 from .exceptions import OperationError
 from .helpers import b64_decode_padded
 from .client import FmdClient
-
-
-def _parse_location_blob(blob_b64: str) -> Location:
-    """Helper to decrypt and parse a location blob into Location dataclass."""
-    # This function expects the caller to pass in a client to decrypt; kept here
-    # for signature clarity in Device methods.
-    raise RuntimeError("Internal: _parse_location_blob should not be called directly")
 
 
 class Device:
@@ -52,12 +45,21 @@ class Device:
             await self.refresh(force=force)
         return self.cached_location
 
-    async def get_history(
-        self, start: Optional[Union[int, datetime]] = None, end: Optional[Union[int, datetime]] = None, limit: int = -1
-    ) -> AsyncIterator[Location]:
+    async def get_history(self, limit: int = -1) -> AsyncIterator[Location]:
         """
         Iterate historical locations. Uses client.get_locations() under the hood.
-        Yields decrypted Location objects newest-first (matches get_all_locations when requesting N recent).
+
+        Args:
+            limit: Maximum number of locations to return. -1 for all available.
+
+        Yields:
+            Decrypted Location objects, newest-first.
+
+        Raises:
+            OperationError: If decryption or parsing fails for a location blob.
+
+        Note:
+            Time-based filtering (start/end) is not currently supported by the FMD server API.
         """
         # For parity with original behavior, we request num_to_get=limit when limit!=-1,
         # otherwise request all and stream.
@@ -144,6 +146,8 @@ class Device:
             # Remove characters that could break command parsing (quotes/backticks/semicolons)
             for ch in ['"', "'", "`", ";"]:
                 sanitized = sanitized.replace(ch, "")
+            # Re-collapse whitespace after removing special chars (may leave gaps)
+            sanitized = " ".join(sanitized.split())
             # Cap length to 120 chars to avoid overly long command payloads
             if len(sanitized) > 120:
                 sanitized = sanitized[:120]

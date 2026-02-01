@@ -106,3 +106,36 @@ async def test_device_lock_truncates_long_message():
             assert payload == "a" * 120
         finally:
             await client.close()
+
+
+@pytest.mark.asyncio
+async def test_device_lock_with_only_removed_chars_sends_plain_lock():
+    """Test that a message with only removed characters results in plain 'lock' command."""
+    client = FmdClient("https://fmd.example.com")
+    client.access_token = "token"
+
+    class DummySigner:
+        def sign(self, message_bytes, pad, algo):
+            return b"\xab" * 64
+
+    client.private_key = DummySigner()
+
+    await client._ensure_session()
+    device = Device(client, "test-device")
+
+    with aioresponses() as m:
+        captured = {}
+
+        def cb(url, **kwargs):
+            captured["json"] = kwargs.get("json")
+            return CallbackResult(status=200, body="OK")
+
+        m.post("https://fmd.example.com/api/v1/command", callback=cb)
+        try:
+            # Message consists only of chars that get removed (quotes, semicolons, backticks)
+            ok = await device.lock("  ';\"` ;' \" `  ")
+            assert ok is True
+            # Should fall back to plain "lock" since sanitized message is empty
+            assert captured["json"]["Data"] == "lock"
+        finally:
+            await client.close()
