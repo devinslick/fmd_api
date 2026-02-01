@@ -7,16 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.8] - 2025-02-01
+
 ### Added
 - `decrypt_data_blob_async()` method for non-blocking decryption in async contexts
 - Exported `Location`, `PhotoResult`, and `RateLimitError` from package root
+- `CHANGELOG.md` following Keep a Changelog format
+- Comprehensive exception documentation (Raises sections) for all public API methods
 
 ### Changed
 - Improved lock message sanitization to re-collapse whitespace after removing special characters
 - Simplified `get_history()` signature by removing unused `start`/`end` parameters
+- Improved docstrings for helpers.py functions
 
 ### Removed
 - Dead code: `_parse_location_blob()` function that was never called
+- Placeholder comment from helpers.py
 
 ### Fixed
 - Lock messages containing only special characters now correctly fall back to plain "lock" command
@@ -98,7 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Previous synchronous implementation. See git history for details.
 
-[Unreleased]: https://github.com/devinslick/fmd_api/compare/v2.0.7...HEAD
+[Unreleased]: https://github.com/devinslick/fmd_api/compare/v2.0.8...HEAD
+[2.0.8]: https://github.com/devinslick/fmd_api/compare/v2.0.7...v2.0.8
 [2.0.7]: https://github.com/devinslick/fmd_api/compare/v2.0.6...v2.0.7
 [2.0.6]: https://github.com/devinslick/fmd_api/compare/v2.0.5...v2.0.6
 [2.0.5]: https://github.com/devinslick/fmd_api/compare/v2.0.4...v2.0.5
