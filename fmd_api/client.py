@@ -123,6 +123,31 @@ class FmdClient:
         keepalive_timeout: Optional[float] = None,
         drop_password: bool = False,
     ) -> "FmdClient":
+        """
+        Factory method to create and authenticate an FmdClient.
+
+        Args:
+            base_url: HTTPS URL of the FMD server.
+            fmd_id: User/device identifier.
+            password: Authentication password.
+            session_duration: Token validity in seconds (default 3600).
+            cache_ttl: Cache time-to-live in seconds.
+            timeout: HTTP request timeout in seconds.
+            ssl: SSL configuration (None=default, False=disable, SSLContext=custom).
+            conn_limit: Maximum total connections.
+            conn_limit_per_host: Maximum connections per host.
+            keepalive_timeout: Connection keepalive timeout.
+            drop_password: If True, discard password after successful auth.
+
+        Returns:
+            Authenticated FmdClient instance.
+
+        Raises:
+            ValueError: If base_url uses HTTP instead of HTTPS.
+            FmdApiException: If authentication fails or server returns an error.
+            aiohttp.ClientError: If a network error occurs.
+            asyncio.TimeoutError: If the request times out.
+        """
         inst = cls(
             base_url,
             session_duration,
@@ -176,7 +201,22 @@ class FmdClient:
     async def authenticate(self, fmd_id: str, password: str, session_duration: int) -> None:
         """
         Performs the full authentication and private key retrieval workflow.
-        Mirrors the behavior in the original fmd_api.FmdApi.
+
+        This method:
+        1. Requests a salt from the server
+        2. Hashes the password with Argon2id
+        3. Requests an access token
+        4. Retrieves and decrypts the private key
+
+        Args:
+            fmd_id: User/device identifier.
+            password: Authentication password.
+            session_duration: Token validity in seconds.
+
+        Raises:
+            FmdApiException: If authentication fails or server returns an error.
+            aiohttp.ClientError: If a network error occurs.
+            asyncio.TimeoutError: If the request times out.
         """
         log.info("[1] Requesting salt...")
         salt = await self._get_salt(fmd_id)
@@ -322,6 +362,22 @@ class FmdClient:
 
     @classmethod
     async def from_auth_artifacts(cls, artifacts: AuthArtifacts) -> "FmdClient":
+        """
+        Restore a client from previously exported authentication artifacts.
+
+        This allows password-free session resumption using saved credentials.
+
+        Args:
+            artifacts: Dictionary containing base_url, fmd_id, access_token,
+                private_key, and optionally password_hash, session_duration,
+                token_issued_at.
+
+        Returns:
+            FmdClient instance ready for API calls.
+
+        Raises:
+            ValueError: If required artifact fields are missing or invalid.
+        """
         required = ["base_url", "fmd_id", "access_token", "private_key"]
         missing = [k for k in required if k not in artifacts]
         if missing:
@@ -608,7 +664,19 @@ class FmdClient:
     async def get_locations(self, num_to_get: int = -1, skip_empty: bool = True, max_attempts: int = 10) -> List[str]:
         """
         Fetches all or the N most recent location blobs.
-        Returns list of base64-encoded blobs (strings), same as original get_all_locations.
+
+        Args:
+            num_to_get: Number of locations to fetch (-1 for all).
+            skip_empty: If True, skip empty/invalid blobs.
+            max_attempts: Maximum retry attempts for each location.
+
+        Returns:
+            List of base64-encoded encrypted location blobs.
+
+        Raises:
+            FmdApiException: If server returns an error or unexpected response.
+            aiohttp.ClientError: If a network error occurs.
+            asyncio.TimeoutError: If the request times out.
         """
         log.debug(f"Getting locations, num_to_get={num_to_get}, " f"skip_empty={skip_empty}")
         size_str = await self._make_api_request(
@@ -677,7 +745,19 @@ class FmdClient:
         return locations
 
     async def get_pictures(self, num_to_get: int = -1, timeout: Optional[float] = None) -> List[JSONType]:
-        """Fetches all or the N most recent picture metadata blobs (raw server response)."""
+        """
+        Fetches all or the N most recent picture metadata blobs.
+
+        Args:
+            num_to_get: Number of pictures to fetch (-1 for all).
+            timeout: Custom timeout for this request (uses client default if None).
+
+        Returns:
+            List of picture blobs (may be base64 strings or metadata dicts).
+
+        Raises:
+            aiohttp.ClientError: If a network error occurs (returns empty list).
+        """
         req_timeout = aiohttp.ClientTimeout(total=timeout if timeout is not None else self.timeout)
         try:
             await self._ensure_session()
@@ -841,7 +921,22 @@ class FmdClient:
     # Commands
     # -------------------------
     async def send_command(self, command: str) -> bool:
-        """Sends a signed command to the server. Returns True on success."""
+        """
+        Sends a signed command to the device via the server.
+
+        Commands are signed with RSA-PSS using the client's private key.
+
+        Args:
+            command: The command string to send (e.g., "ring", "lock", "locate").
+
+        Returns:
+            True if the command was sent successfully.
+
+        Raises:
+            FmdApiException: If private key not loaded or command fails.
+            aiohttp.ClientError: If a network error occurs.
+            asyncio.TimeoutError: If the request times out.
+        """
         log.info(f"Sending command to device: {command}")
         unix_time_ms = int(time.time() * 1000)
         message_to_sign = f"{unix_time_ms}:{command}"
@@ -869,6 +964,18 @@ class FmdClient:
             raise FmdApiException(f"Failed to send command '{command}': {e}") from e
 
     async def request_location(self, provider: str = "all") -> bool:
+        """
+        Request a fresh location update from the device.
+
+        Args:
+            provider: Location provider - "all", "gps", "cell", "network", or "last".
+
+        Returns:
+            True if the request was sent successfully.
+
+        Raises:
+            FmdApiException: If the command fails.
+        """
         provider_map = {
             "all": "locate",
             "gps": "locate gps",
@@ -881,18 +988,53 @@ class FmdClient:
         return await self.send_command(command)
 
     async def set_bluetooth(self, enable: bool) -> bool:
-        """Set Bluetooth power explicitly: True = on, False = off."""
+        """
+        Set Bluetooth power state.
+
+        Args:
+            enable: True to enable, False to disable.
+
+        Returns:
+            True if the command was sent successfully.
+
+        Raises:
+            FmdApiException: If the command fails.
+        """
         command = "bluetooth on" if enable else "bluetooth off"
         log.info(f"{'Enabling' if enable else 'Disabling'} Bluetooth")
         return await self.send_command(command)
 
     async def set_do_not_disturb(self, enable: bool) -> bool:
-        """Set Do Not Disturb explicitly: True = on, False = off."""
+        """
+        Set Do Not Disturb mode.
+
+        Args:
+            enable: True to enable, False to disable.
+
+        Returns:
+            True if the command was sent successfully.
+
+        Raises:
+            FmdApiException: If the command fails.
+        """
         command = "nodisturb on" if enable else "nodisturb off"
         log.info(f"{'Enabling' if enable else 'Disabling'} Do Not Disturb mode")
         return await self.send_command(command)
 
     async def set_ringer_mode(self, mode: str) -> bool:
+        """
+        Set the device ringer mode.
+
+        Args:
+            mode: One of "normal", "vibrate", or "silent".
+
+        Returns:
+            True if the command was sent successfully.
+
+        Raises:
+            ValueError: If mode is not valid.
+            FmdApiException: If the command fails.
+        """
         mode = mode.lower()
         mode_map = {"normal": "ringermode normal", "vibrate": "ringermode vibrate", "silent": "ringermode silent"}
         if mode not in mode_map:
@@ -902,6 +1044,19 @@ class FmdClient:
         return await self.send_command(command)
 
     async def take_picture(self, camera: str = "back") -> bool:
+        """
+        Request a picture from the device camera.
+
+        Args:
+            camera: Which camera to use - "front" or "back".
+
+        Returns:
+            True if the command was sent successfully.
+
+        Raises:
+            ValueError: If camera is not "front" or "back".
+            FmdApiException: If the command fails.
+        """
         camera = camera.lower()
         if camera not in ["front", "back"]:
             raise ValueError(f"Invalid camera '{camera}'. Must be 'front' or 'back'")

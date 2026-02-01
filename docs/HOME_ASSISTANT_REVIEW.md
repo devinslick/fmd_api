@@ -353,7 +353,9 @@ async def decrypt_data_blob_async(self, data_b64: str) -> bytes:
 
 **HA Rationale:** Good practice for library maintenance and user communication.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Added `CHANGELOG.md` following Keep a Changelog format
+- Documents all releases from 2.0.0 to current
 
 ---
 
@@ -378,7 +380,9 @@ async def get_locations(...) -> List[str]:
 
 **HA Rationale:** Users need to know how to handle errors properly.
 
-**Status:** ❌ TODO
+**Status:** ✅ FIXED
+- Added Raises sections to all public API methods in client.py
+- Documented ValueError, FmdApiException, aiohttp.ClientError, asyncio.TimeoutError
 
 ---
 
@@ -510,8 +514,8 @@ def __init__(self, ..., ssl_context: Optional[ssl.SSLContext] = None):
 
 **For Best Practices (Minor):**
 - Add CI badges — PARTIAL (Added Tests + Codecov badges; PyPI/version badges pending)
-- Create CHANGELOG.md
-- Document exceptions
+- Create CHANGELOG.md — DONE
+- Document exceptions — DONE
 - Add test coverage reporting — DONE (100% branch coverage)
 - Export all public models — DONE
 
@@ -573,9 +577,9 @@ Before submitting to Home Assistant:
 - [x] All critical issues resolved
 - [x] Major security concerns addressed
 - [x] Type hints complete and accurate
-- [ ] Documentation comprehensive
+- [x] Documentation comprehensive
 - [x] Test coverage > 80% (Currently at 100%)
-- [ ] CHANGELOG.md up to date
+- [x] CHANGELOG.md up to date
 - [x] Stable version released to PyPI
 - [x] Code passes `flake8` and `mypy`
 - [x] CI runs tests on all supported Python versions
