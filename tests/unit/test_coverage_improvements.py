@@ -734,12 +734,33 @@ async def test_backoff_without_jitter():
 
 
 @pytest.mark.asyncio
-async def test_device_internal_parse_location_error():
-    """Test that _parse_location_blob raises RuntimeError (device.py line 23)."""
-    from fmd_api.device import _parse_location_blob
+async def test_decrypt_data_blob_async():
+    """Test decrypt_data_blob_async runs decryption without blocking event loop."""
+    client = FmdClient("https://fmd.example.com")
 
-    with pytest.raises(RuntimeError, match="should not be called directly"):
-        _parse_location_blob("dummy_blob")
+    # Set up private key for decryption
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=3072, backend=default_backend())
+    client.private_key = private_key
+
+    # Create a properly encrypted blob
+    session_key = b"\x00" * 32
+    aesgcm = AESGCM(session_key)
+    iv = b"\x01" * 12
+    plaintext = b'{"lat":10.0,"lon":20.0,"date":1600000000000}'
+    ciphertext = aesgcm.encrypt(iv, plaintext, None)
+
+    public_key = private_key.public_key()
+    session_key_packet = public_key.encrypt(
+        session_key,
+        asym_padding.OAEP(mgf=asym_padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None),
+    )
+
+    blob = session_key_packet + iv + ciphertext
+    blob_b64 = base64.b64encode(blob).decode("utf-8")
+
+    # Test the async method
+    result = await client.decrypt_data_blob_async(blob_b64)
+    assert result == plaintext
 
 
 @pytest.mark.asyncio
