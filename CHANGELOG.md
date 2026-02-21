@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.9] - 2026-02-21
+
 ### Changed
 - HTTP URLs (`http://`) are now permitted; HTTPS is strongly recommended but no longer enforced. Use HTTP only on trusted local networks or for development.
 
