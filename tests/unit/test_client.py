@@ -100,10 +100,16 @@ async def test_connector_configuration_applied():
         await client.close()
 
 
-def test_https_required():
-    """FmdClient should reject non-HTTPS base URLs."""
-    with pytest.raises(ValueError, match="HTTPS is required"):
-        FmdClient("http://fmd.example.com")
+def test_http_url_accepted():
+    """FmdClient should accept plain HTTP base URLs (HTTPS is strongly recommended but not required)."""
+    client = FmdClient("http://fmd.example.com")
+    assert client.base_url == "http://fmd.example.com"
+
+
+def test_invalid_scheme_rejected():
+    """FmdClient should reject URLs with unsupported schemes."""
+    with pytest.raises(ValueError):
+        FmdClient("ftp://fmd.example.com")
 
 
 @pytest.mark.asyncio

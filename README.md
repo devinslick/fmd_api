@@ -42,7 +42,7 @@ asyncio.run(main())
 
 ### TLS and self-signed certificates
 
-Find My Device always requires HTTPS; plain HTTP is not allowed by this client. If you need to connect to a server with a self-signed certificate, you have two options:
+HTTPS is strongly recommended for all connections to FMD server. HTTP is permitted for local development or trusted private networks, but should not be used in production. If you need to connect to a server with a self-signed certificate, you have two options:
 
 - Preferred (secure): provide a custom SSLContext that trusts your CA or certificate
 - Last resort (not for production): disable certificate validation explicitly
@@ -68,13 +68,13 @@ insecure_client = FmdClient("https://fmd.example.com", ssl=False)
 ```
 
 Notes:
-- HTTP (http://) is rejected. Use only HTTPS URLs.
+- HTTPS is strongly recommended. Use HTTP only on trusted local networks or for development.
 - Prefer a custom SSLContext over disabling verification.
 - For higher security, consider pinning the server cert in your context.
 
 > Warning
 >
-> Passing `ssl=False` disables TLS certificate validation and should only be used in development. For production, use a custom `ssl.SSLContext` that trusts your CA/certificate or pin the server certificate. The client enforces HTTPS and rejects `http://` URLs.
+> Passing `ssl=False` disables TLS certificate validation and should only be used in development. For production, use a custom `ssl.SSLContext` that trusts your CA/certificate or pin the server certificate. Using `http://` URLs sends credentials and data in plaintext — only use HTTP on trusted local networks or for development purposes.
 
 #### Pinning the exact server certificate (recommended for self-signed)
 
