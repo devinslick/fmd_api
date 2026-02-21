@@ -64,9 +64,9 @@ class FmdClient:
         conn_limit_per_host: Optional[int] = None,
         keepalive_timeout: Optional[float] = None,
     ) -> None:
-        # Enforce HTTPS only (FindMyDevice always uses TLS)
-        if base_url.lower().startswith("http://"):
-            raise ValueError("HTTPS is required for FmdClient base_url; plain HTTP is not allowed.")
+        # Validate that the URL uses a supported scheme
+        if not base_url.lower().startswith(("http://", "https://")):
+            raise ValueError("base_url must use http:// or https://")
         self.base_url = base_url.rstrip("/")
         self.session_duration = session_duration
         self.cache_ttl = cache_ttl
@@ -127,7 +127,7 @@ class FmdClient:
         Factory method to create and authenticate an FmdClient.
 
         Args:
-            base_url: HTTPS URL of the FMD server.
+            base_url: URL of the FMD server (https:// strongly recommended; http:// permitted for local/dev use).
             fmd_id: User/device identifier.
             password: Authentication password.
             session_duration: Token validity in seconds (default 3600).
@@ -143,7 +143,7 @@ class FmdClient:
             Authenticated FmdClient instance.
 
         Raises:
-            ValueError: If base_url uses HTTP instead of HTTPS.
+            ValueError: If base_url does not start with http:// or https://.
             FmdApiException: If authentication fails or server returns an error.
             asyncio.TimeoutError: If the request times out.
         """
