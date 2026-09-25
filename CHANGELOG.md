@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so the license is machine-readable on PyPI. The license *classifier* was removed
   (superseded by the SPDX license expression per PEP 639). No code changes.
 
+### Changed
+- Minimum Python is now 3.9 (setuptools >= 77, required for PEP 639 license
+  expressions, does not support Python 3.8). Home Assistant core requires
+  Python 3.13, so this does not affect HA users.
+- CI test matrix extended to Python 3.13; 3.8 dropped.
+
+### Fixed
+- `fmd_api.__version__` was stale at `2.0.8`; now kept in sync with the package
+  version (`2.0.10`).
+- Dev/test dependency `aiohttp` is now pinned `<3.14` on Python >= 3.11:
+  aiohttp 3.14 changed the `ClientResponse` constructor signature, which breaks
+  `aioresponses` and caused 90 unit test failures in CI.
+
 ## [2.0.9] - 2026-02-21
 
 ### Changed

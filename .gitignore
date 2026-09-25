@@ -16,8 +16,10 @@ credentials.txt
 # Distribution / packaging
 .Python
 build/
-develop-eggs/
 dist/
+.coverage
+coverage.xml
+develop-eggs/
 downloads/
 eggs/
 .eggs/
