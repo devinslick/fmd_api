@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.10] - 2026-09-25
+
+### Added
+- `LICENSE` file and explicit `license = "MIT"` (PEP 639) metadata in `pyproject.toml`,
+  so the license is machine-readable on PyPI. The license *classifier* was removed
+  (superseded by the SPDX license expression per PEP 639). No code changes.
 
 ## [2.0.9] - 2026-02-21
 
