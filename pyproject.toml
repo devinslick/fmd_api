@@ -1,18 +1,18 @@
 [project]
 name = "fmd_api"
-version = "2.0.9"
+version = "2.0.10"
 authors = [{name = "devinslick"}]
 description = "A Python client for the FMD (Find My Device) server API"
 readme = "README.md"
-requires-python = ">=3.8"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project.urls]
@@ -42,6 +42,7 @@ dev = [
     "pytest-asyncio",
     "pytest-cov",
     "aioresponses>=0.7.0",
+    "aiohttp<3.14",
     "black",
     "flake8",
     "mypy",
