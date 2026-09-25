@@ -42,7 +42,7 @@ dev = [
     "pytest-asyncio",
     "pytest-cov",
     "aioresponses>=0.7.0",
-    "aiohttp<3.14; python_version >= '3.11'",
+    "aiohttp<3.14",
     "black",
     "flake8",
     "mypy",
