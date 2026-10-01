@@ -11,6 +11,7 @@ Assistant integration) do not change shape.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import time
@@ -104,7 +105,10 @@ class ApiV2Mixin:
         """Perform protocol-v2 login and establish the session keys."""
         salt_resp = await self._request_v2("GET", f"/account/{fmd_id}/salt")
         salt = base64.b64decode(_pad_b64(salt_resp[_SALT_FIELD]))
-        k_auth, k_pmk = derive_password_key(fmd_id, password, salt)
+        loop = asyncio.get_running_loop()
+        k_auth, k_pmk = await loop.run_in_executor(
+            None, lambda: derive_password_key(fmd_id, password, salt)
+        )
 
         resp = await self._request_v2(
             "POST",
@@ -173,7 +177,10 @@ class ApiV2Mixin:
         import os as _os
 
         salt = _os.urandom(16)
-        k_auth, k_pmk = derive_password_key(fmd_id, password, salt)
+        loop = asyncio.get_running_loop()
+        k_auth, k_pmk = await loop.run_in_executor(
+            None, lambda: derive_password_key(fmd_id, password, salt)
+        )
         master_key = generate_master_key()
         enc_master_key = encrypt_master_key(fmd_id, k_pmk, master_key)
 
