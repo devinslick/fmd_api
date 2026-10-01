@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.1] - 2026-10-01
+
+### Fixed
+- Argon2id key derivation in async `login_v2`/`register_v2` now runs in
+  the default executor instead of blocking the event loop (measurable
+  stall on low-powered hosts such as Raspberry Pi; relevant for Home
+  Assistant config flows and 401 re-login).
+
 ## [3.0.0] - 2026-09-30
 
 ### Added
