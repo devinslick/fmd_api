@@ -19,7 +19,6 @@ exactly as in the protocol spec ("Context strings" section).
 
 from __future__ import annotations
 
-import base64
 import hashlib
 import os
 import struct

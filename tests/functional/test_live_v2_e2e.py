@@ -38,14 +38,12 @@ async def main() -> None:
     # --- 1. register (fresh account each run: salt differs, that's fine) ---
     client = FmdClient(BASE)
     try:
-        registered = False
         try:
             await client.register_v2(ACCOUNT, PASSWORD)
-            registered = True
             print(f"[1] registered protocol-v2 account '{ACCOUNT}'")
         except ApiV2Error as exc:
             if "not available" in str(exc).lower() or "409" in str(exc):
-                print(f"[1] account already exists, logging in instead")
+                print("[1] account already exists, logging in instead")
                 await client.login_v2(ACCOUNT, PASSWORD, 3600)
             else:
                 raise

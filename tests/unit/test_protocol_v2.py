@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import os
 import struct
 
@@ -11,7 +10,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from fmd_api.protocol_v2 import (
     CTX_DATA,
     CTX_DEK,
-    AES_GCM_IV_SIZE,
     LongTermKeys,
     derive_password_key,
     decrypt_master_key,
@@ -21,7 +19,6 @@ USERNAME = "test-user"
 PASSWORD = "correct horse battery staple"
 SALT = os.urandom(16)
 MASTER_KEY = os.urandom(32)
-
 
 
 def test_password_key_derivation_deterministic() -> None:
