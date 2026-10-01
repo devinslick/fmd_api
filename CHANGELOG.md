@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.3] - 2026-10-01
+
+### Fixed
+- `export_data_zip` no longer performs blocking disk I/O on the event
+  loop: data is decrypted asynchronously first, then the ZIP is packaged
+  in a worker thread via `asyncio.to_thread` (completes the client's
+  async-safety cleanup; the ZIP-writing loops were the last blocking
+  call sites flagged by the Home Assistant requirements check).
+
 ## [3.1.2] - 2026-10-01
 
 ### Fixed

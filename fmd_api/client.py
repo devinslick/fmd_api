@@ -21,7 +21,7 @@ import json
 import logging
 import time
 import random
-from typing import Any, Optional, List, Dict, cast, Union
+from typing import Any, Optional, List, Dict, Tuple, cast, Union
 import ssl
 from types import TracebackType
 
@@ -964,78 +964,90 @@ class FmdClient(ApiV2Mixin):
                 log.info("Fetching all pictures...")
                 picture_blobs = await self.get_pictures(num_to_get=-1)
 
-            # Create ZIP file with exported data
+            # Decrypt first (async, executor-offloaded), then write the ZIP
+            # in a thread so no blocking disk I/O runs on the event loop.
+            log.info("Decrypting export data...")
+            decrypted_locations: List[JSONType] = []
+            if location_blobs:
+                log.info(f"Decrypting {len(location_blobs)} locations...")
+                for i, loc_blob in enumerate(location_blobs):
+                    if not isinstance(loc_blob, str):
+                        log.warning(f"Skipping non-text location blob at index {i}")
+                        decrypted_locations.append({"error": "invalid blob type", "index": i})
+                        continue
+                    try:
+                        decrypted = await self.decrypt_data_blob_async(loc_blob)
+                        loc_data = json.loads(decrypted)
+                        decrypted_locations.append(loc_data)
+                    except Exception as e:
+                        log.warning(f"Failed to decrypt location {i}: {e}")
+                        decrypted_locations.append({"error": str(e), "index": i})
+
+            picture_entries: List[Tuple[int, Optional[str], Optional[bytes], Optional[str]]] = []
+            if picture_blobs:
+                log.info(f"Decrypting and extracting {len(picture_blobs)} pictures...")
+                for i, pic_blob in enumerate(picture_blobs):
+                    if not isinstance(pic_blob, str):
+                        log.warning(f"Skipping non-text picture blob at index {i}")
+                        picture_entries.append((i, None, None, "invalid blob type"))
+                        continue
+                    try:
+                        decrypted = await self.decrypt_data_blob_async(pic_blob)
+                        # Pictures are double-encoded: decrypt -> base64 string -> image bytes
+                        inner_b64 = decrypted.decode("utf-8").strip()
+                        from .helpers import b64_decode_padded
+
+                        image_bytes = b64_decode_padded(inner_b64)
+
+                        # Determine image format from magic bytes
+                        if image_bytes.startswith(b"\xff\xd8\xff"):
+                            ext = "jpg"
+                        elif image_bytes.startswith(b"\x89PNG"):
+                            ext = "png"
+                        else:
+                            ext = "jpg"  # default to jpg
+
+                        filename = f"pictures/picture_{i:04d}.{ext}"
+                        picture_entries.append((i, filename, image_bytes, None))
+
+                    except Exception as e:
+                        log.warning(f"Failed to decrypt/extract picture {i}: {e}")
+                        picture_entries.append((i, None, None, str(e)))
+
+            def _write_zip() -> None:
+                """Blocking ZIP packaging; runs in a worker thread."""
+                with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zipf:
+                    picture_file_list: List[Dict[str, JSONType]] = []
+                    for index, filename, image_bytes, error in picture_entries:
+                        if error is not None or filename is None or image_bytes is None:
+                            picture_file_list.append({"index": index, "error": error or "invalid blob"})
+                            continue
+                        zipf.writestr(filename, image_bytes)
+                        picture_file_list.append(
+                            {"index": index, "filename": filename, "size": len(image_bytes)}
+                        )
+
+                    # Add metadata file (after processing so we have accurate counts)
+                    export_info: Dict[str, JSONType] = {
+                        "export_date": datetime.now().isoformat(),
+                        "fmd_id": self._fmd_id,
+                        "location_count": len(location_blobs),
+                        "picture_count": len(picture_blobs),
+                        "pictures_extracted": len([p for p in picture_file_list if "error" not in p]),
+                        "version": "2.0",
+                    }
+                    zipf.writestr("info.json", json.dumps(export_info, indent=2))
+
+                    # Add locations as readable JSON
+                    if decrypted_locations:
+                        zipf.writestr("locations.json", json.dumps(decrypted_locations, indent=2))
+
+                    # Add picture manifest if we extracted any
+                    if picture_file_list:
+                        zipf.writestr("pictures/manifest.json", json.dumps(picture_file_list, indent=2))
+
             log.info(f"Creating export ZIP at {out_path}...")
-            with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-                # Decrypt and add readable locations
-                decrypted_locations: List[JSONType] = []
-                if location_blobs:
-                    log.info(f"Decrypting {len(location_blobs)} locations...")
-                    for i, loc_blob in enumerate(location_blobs):
-                        if not isinstance(loc_blob, str):
-                            log.warning(f"Skipping non-text location blob at index {i}")
-                            decrypted_locations.append({"error": "invalid blob type", "index": i})
-                            continue
-                        try:
-                            decrypted = await self.decrypt_data_blob_async(loc_blob)
-                            loc_data = json.loads(decrypted)
-                            decrypted_locations.append(loc_data)
-                        except Exception as e:
-                            log.warning(f"Failed to decrypt location {i}: {e}")
-                            decrypted_locations.append({"error": str(e), "index": i})
-
-                # Decrypt and extract pictures as image files
-                picture_file_list: List[Dict[str, JSONType]] = []
-                if picture_blobs:
-                    log.info(f"Decrypting and extracting {len(picture_blobs)} pictures...")
-                    for i, pic_blob in enumerate(picture_blobs):
-                        if not isinstance(pic_blob, str):
-                            log.warning(f"Skipping non-text picture blob at index {i}")
-                            picture_file_list.append({"index": i, "error": "invalid blob type"})
-                            continue
-                        try:
-                            decrypted = await self.decrypt_data_blob_async(pic_blob)
-                            # Pictures are double-encoded: decrypt -> base64 string -> image bytes
-                            inner_b64 = decrypted.decode("utf-8").strip()
-                            from .helpers import b64_decode_padded
-
-                            image_bytes = b64_decode_padded(inner_b64)
-
-                            # Determine image format from magic bytes
-                            if image_bytes.startswith(b"\xff\xd8\xff"):
-                                ext = "jpg"
-                            elif image_bytes.startswith(b"\x89PNG"):
-                                ext = "png"
-                            else:
-                                ext = "jpg"  # default to jpg
-
-                            filename = f"pictures/picture_{i:04d}.{ext}"
-                            zipf.writestr(filename, image_bytes)
-                            picture_file_list.append({"index": i, "filename": filename, "size": len(image_bytes)})
-
-                        except Exception as e:
-                            log.warning(f"Failed to decrypt/extract picture {i}: {e}")
-                            picture_file_list.append({"index": i, "error": str(e)})
-
-                # Add metadata file (after processing so we have accurate counts)
-                export_info: Dict[str, JSONType] = {
-                    "export_date": datetime.now().isoformat(),
-                    "fmd_id": self._fmd_id,
-                    "location_count": len(location_blobs),
-                    "picture_count": len(picture_blobs),
-                    "pictures_extracted": len([p for p in picture_file_list if "error" not in p]),
-                    "version": "2.0",
-                }
-                zipf.writestr("info.json", json.dumps(export_info, indent=2))
-
-                # Add locations as readable JSON
-                if decrypted_locations:
-                    zipf.writestr("locations.json", json.dumps(decrypted_locations, indent=2))
-
-                # Add picture manifest if we extracted any
-                if picture_file_list:
-                    zipf.writestr("pictures/manifest.json", json.dumps(picture_file_list, indent=2))
-
+            await asyncio.to_thread(_write_zip)
             log.info(f"Export completed successfully: {out_path}")
             return out_path
 
