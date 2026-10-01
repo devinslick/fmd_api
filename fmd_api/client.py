@@ -349,6 +349,9 @@ class FmdClient(ApiV2Mixin):
                 "master_key": base64.b64encode(
                     self._v2_session.long_term_keys.master_key
                 ).decode("ascii"),
+                "auth_key": base64.b64encode(self._v2_session.auth_key).decode("ascii")
+                if self._v2_session.auth_key
+                else None,
             }
         pk = self.private_key
         if pk is None:
@@ -449,6 +452,12 @@ class FmdClient(ApiV2Mixin):
         if not master_key_b64:
             raise ValueError("v2 artifacts require master_key")
         master_key = base64.b64decode(master_key_b64 + "=" * (-len(master_key_b64) % 4))
+        auth_key_b64 = artifacts.get("auth_key")
+        auth_key = (
+            base64.b64decode(auth_key_b64 + "=" * (-len(auth_key_b64) % 4))
+            if auth_key_b64
+            else None
+        )
         inst = cls(base_url)
         inst._fmd_id = fmd_id
         inst.protocol_version = 2
@@ -459,6 +468,7 @@ class FmdClient(ApiV2Mixin):
             access_token=access_token,
             long_term_keys=LongTermKeys(fmd_id, master_key),
             token_issued_at=time.time(),
+            auth_key=auth_key,
         )
         return inst
 

@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Any, Final, Optional
 
+from .exceptions import AuthenticationError, FmdApiException
 from .protocol_v2 import (
     LongTermKeys,
     ProtocolError,
@@ -35,7 +36,7 @@ _ACCESS_TOKEN_FIELD: Final = "accessToken"
 _ENC_MASTER_KEY_FIELD: Final = "encMasterKey64"
 
 
-class ApiV2Error(Exception):
+class ApiV2Error(FmdApiException):
     """Raised for API v2 transport/response errors."""
 
 
@@ -55,6 +56,7 @@ class V2Session:
     access_token: str
     long_term_keys: LongTermKeys
     token_issued_at: float
+    auth_key: Optional[bytes] = None  # K_auth; enables re-login on 401
 
 
 def _pad_b64(s: str) -> str:
@@ -123,7 +125,30 @@ class ApiV2Mixin:
             access_token=access_token,
             long_term_keys=LongTermKeys(fmd_id, master_key),
             token_issued_at=time.time(),
+            auth_key=k_auth,
         )
+
+    async def _relogin_v2(self) -> None:
+        """Re-login with the stored K_auth after a 401 (token expiry)."""
+        if self._v2_session is None or self._v2_session.auth_key is None:
+            raise AuthenticationError(
+                "Access token expired and no v2 auth key stored for re-login"
+            )
+        resp = await self._request_v2(
+            "POST",
+            "/account/login",
+            {
+                "username": self._fmd_id,
+                "passwordHash64": base64.b64encode(
+                    self._v2_session.auth_key
+                ).decode("ascii"),
+                "sessionDurationSeconds": self.session_duration,
+            },
+            _relogin=False,
+        )
+        self.access_token = resp[_ACCESS_TOKEN_FIELD]
+        self._v2_session.access_token = self.access_token
+        self._v2_session.token_issued_at = time.time()
 
     async def register_v2(
         self,
@@ -165,6 +190,7 @@ class ApiV2Mixin:
             access_token=access_token,
             long_term_keys=LongTermKeys(fmd_id, master_key),
             token_issued_at=time.time(),
+            auth_key=k_auth,
         )
         return access_token
 
@@ -249,7 +275,9 @@ class ApiV2Mixin:
         except ValueError:
             return None
 
-    async def _request_v2(self, method: str, path: str, body: Any = None) -> Any:
+    async def _request_v2(
+        self, method: str, path: str, body: Any = None, _relogin: bool = True
+    ) -> Any:
         """JSON request against /api/v2 with bearer auth when logged in."""
         import aiohttp
 
@@ -265,7 +293,12 @@ class ApiV2Mixin:
                 method, url, json=body, headers=headers
             ) as resp:
                 if resp.status == 401:
-                    raise ApiV2Error("401 Unauthorized")
+                    if _relogin and self._v2_session is not None:
+                        await self._relogin_v2()
+                        return await self._request_v2(
+                            method, path, body, _relogin=False
+                        )
+                    raise AuthenticationError("401 Unauthorized (v2)")
                 if resp.status == 403:
                     from .exceptions import AuthenticationError
 

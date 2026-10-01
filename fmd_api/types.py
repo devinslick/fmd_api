@@ -23,6 +23,7 @@ class AuthArtifacts(TypedDict, total=False):
     token_issued_at: Optional[float]
     protocol_version: int
     master_key: str
+    auth_key: Optional[str]
 
 
 class PictureMetadata(TypedDict, total=False):
