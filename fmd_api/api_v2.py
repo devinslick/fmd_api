@@ -12,6 +12,7 @@ Assistant integration) do not change shape.
 from __future__ import annotations
 
 import base64
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Final, Optional
@@ -22,6 +23,8 @@ from .protocol_v2 import (
     TYPE_LOCATION,
     derive_password_key,
     decrypt_master_key,
+    encrypt_master_key,
+    generate_master_key,
 )
 
 V2_BASE: Final = "/api/v2"
@@ -122,6 +125,72 @@ class ApiV2Mixin:
             token_issued_at=time.time(),
         )
 
+    async def register_v2(
+        self,
+        fmd_id: str,
+        password: str,
+        session_duration: int = 3600,
+        registration_token: str = "",
+    ) -> str:
+        """Register a new protocol-v2 account and log in.
+
+        The client picks the salt, derives K_auth/K_pmk, generates the
+        master key and uploads encMasterKey64. Returns the access token.
+        """
+        import base64 as _b64
+        import os as _os
+
+        salt = _os.urandom(16)
+        k_auth, k_pmk = derive_password_key(fmd_id, password, salt)
+        master_key = generate_master_key()
+        enc_master_key = encrypt_master_key(fmd_id, k_pmk, master_key)
+
+        resp = await self._request_v2(
+            "POST",
+            "/account/register",
+            {
+                "username": fmd_id,
+                "salt64": _b64.b64encode(salt).decode("ascii"),
+                "passwordHash64": _b64.b64encode(k_auth).decode("ascii"),
+                "protoVersion": 2,
+                "encMasterKey64": _b64.b64encode(enc_master_key).decode("ascii"),
+                "registrationToken": registration_token,
+            },
+        )
+        access_token = resp[_ACCESS_TOKEN_FIELD]
+        self.protocol_version = 2
+        self.access_token = access_token
+        self._fmd_id = fmd_id
+        self._v2_session = V2Session(
+            access_token=access_token,
+            long_term_keys=LongTermKeys(fmd_id, master_key),
+            token_issued_at=time.time(),
+        )
+        return access_token
+
+    async def post_data_items(
+        self, data_type: str, raw_items: list[bytes]
+    ) -> None:
+        """Upload encrypted data items (testing/migration helper)."""
+        import base64 as _b64
+
+        if self._v2_session is None:
+            msg = "Not logged in with protocol v2"
+            raise ApiV2Error(msg)
+        items = []
+        for raw in raw_items:
+            item_id, unix_millis, ciphertext = (
+                self._v2_session.long_term_keys.encrypt_data_blob(raw, data_type)
+            )
+            items.append(
+                {
+                    "clientItemIdHex": item_id.hex(),
+                    "unixMillis": unix_millis,
+                    "ciphertext64": _b64.b64encode(ciphertext).decode("ascii"),
+                }
+            )
+        await self._request_v2("POST", f"/data/{data_type}", {"items": items})
+
     async def get_data_items(self, data_type: str) -> list[EncryptedItem]:
         """Fetch all encrypted items of a data type (locations, pictures...)."""
         if self._v2_session is None:
@@ -180,7 +249,13 @@ class ApiV2Mixin:
                     text = await resp.text()
                     raise ApiV2Error(f"HTTP {resp.status}: {text[:200]}")
                 if resp.status == 200:
-                    return await resp.json()
+                    body = await resp.read()
+                    if not body:
+                        return None
+                    try:
+                        return json.loads(body)
+                    except ValueError:
+                        return body.decode("utf-8", errors="replace")
                 return None
         except aiohttp.ClientError as exc:
             raise ApiV2Error(f"Request failed: {exc}") from exc

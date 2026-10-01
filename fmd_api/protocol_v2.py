@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import os
 import struct
+import time
 from typing import Final
 
 from argon2.low_level import Type, hash_secret_raw
@@ -133,6 +135,23 @@ def decrypt_master_key(
         raise ProtocolError(msg) from exc
 
 
+def generate_master_key() -> bytes:
+    """Generate a fresh 256-bit account master key (registration)."""
+    return os.urandom(AES_GCM_KEY_SIZE)
+
+
+def encrypt_master_key(
+    username: str, pre_master_key: bytes, master_key: bytes
+) -> bytes:
+    """Encrypt the master key under K_pmk (registration/passphrase rotation).
+
+    Returns iv || ct || tag, the payload for encMasterKey64.
+    """
+    ad = CTX_MASTER + _hash_username(username)
+    iv = os.urandom(AES_GCM_IV_SIZE)
+    return iv + AESGCM(pre_master_key).encrypt(iv, master_key, ad)
+
+
 def derive_kek(master_key: bytes, username: str, data_type: str) -> bytes:
     """Derive the per-type key-encryption key K_tau."""
     context = _KEK_CONTEXTS.get(data_type)
@@ -159,6 +178,32 @@ class LongTermKeys:
             TYPE_PICTURE: self.picture_key,
             TYPE_COMMAND: self.command_key,
         }[data_type]
+
+    def encrypt_data_blob(self, raw: bytes, data_type: str) -> tuple[bytes, int, bytes]:
+        """Encrypt one data item; returns (item_id, unix_millis, ciphertext).
+
+        Mirror of decrypt_data_blob: fresh 128-bit item id, fresh DEK,
+        AES-GCM twice (DEK under the type KEK, data under the DEK) with
+        the same context-bound ADs.
+        """
+        item_id = os.urandom(CLIENT_ITEM_ID_SIZE)
+        unix_millis = int(time.time() * 1000)
+        ad_suffix = (
+            data_type.encode("utf-8")
+            + _hash_username(self.username)
+            + item_id
+            + struct.pack(">q", unix_millis)
+        )
+        dek = os.urandom(AES_GCM_KEY_SIZE)
+        iv_dek = os.urandom(AES_GCM_IV_SIZE)
+        iv_data = os.urandom(AES_GCM_IV_SIZE)
+        encrypted_dek = iv_dek + AESGCM(self._kek(data_type)).encrypt(
+            iv_dek, dek, CTX_DEK + ad_suffix
+        )
+        encrypted_data = iv_data + AESGCM(dek).encrypt(
+            iv_data, raw, CTX_DATA + ad_suffix
+        )
+        return item_id, unix_millis, encrypted_dek + encrypted_data
 
     def decrypt_data_blob(
         self, item_id: bytes, unix_millis: int, data_type: str, ciphertext: bytes
