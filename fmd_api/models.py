@@ -61,6 +61,7 @@ class Location:
     heading_deg: Optional[float] = None
     battery_pct: Optional[int] = None
     provider: Optional[str] = None
+    timestamp_ms: Optional[int] = None
     raw: Optional[Dict[str, JSONType]] = None
 
     @classmethod
@@ -100,9 +101,11 @@ class Location:
 
         # Convert date (ms since epoch) to aware datetime in UTC if present
         ts = None
+        ts_ms: Optional[int] = None
         if data.get("date") is not None:
             try:
-                ts = datetime.fromtimestamp(float(data["date"]) / 1000.0, tz=timezone.utc)
+                ts_ms = int(float(data["date"]))
+                ts = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
             except Exception as e:
                 raise ValueError(f"Invalid 'date' field for Location: {e}") from e
 
@@ -123,6 +126,7 @@ class Location:
             heading_deg=_optional_float(data, "heading"),
             battery_pct=battery,
             provider=(str(data["provider"]) if data.get("provider") is not None else None),
+            timestamp_ms=ts_ms,
             raw=data,
         )
 

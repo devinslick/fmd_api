@@ -173,3 +173,20 @@ def test_location_speed_and_heading_still_lenient() -> None:
     )
     assert loc.speed_m_s == -3.0
     assert loc.heading_deg == 400.0
+
+
+# --- Typed timestamp_ms (3.1.4) ---
+
+
+def test_location_timestamp_ms_typed() -> None:
+    """timestamp_ms exposes the raw epoch-ms value without touching .raw."""
+    loc = Location.from_json({"lat": 1.0, "lon": 2.0, "date": 1761220800000})
+    assert loc.timestamp_ms == 1761220800000
+    assert loc.timestamp is not None
+    assert loc.timestamp.year == 2025
+
+
+def test_location_timestamp_ms_absent() -> None:
+    loc = Location.from_json({"lat": 1.0, "lon": 2.0})
+    assert loc.timestamp_ms is None
+    assert loc.timestamp is None
