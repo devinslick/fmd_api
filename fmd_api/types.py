@@ -21,6 +21,8 @@ class AuthArtifacts(TypedDict, total=False):
     password_hash: Optional[str]
     session_duration: int
     token_issued_at: Optional[float]
+    protocol_version: int
+    master_key: str
 
 
 class PictureMetadata(TypedDict, total=False):

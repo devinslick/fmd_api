@@ -222,6 +222,33 @@ class ApiV2Mixin:
         except ProtocolError as exc:
             raise ApiV2Error(str(exc)) from exc
 
+    async def _get_locations_v2(self, num_to_get: int) -> list[str]:
+        """v2 branch of get_locations: return base64 ciphertext envelopes.
+
+        Encodes each EncryptedItem back to a transport string so the
+        v1-shaped public surface (List[str] blobs) is preserved; the
+        decrypt side recognises v2 envelopes via decrypt_data_blob.
+        """
+        import base64 as _b64
+
+        items = await self.get_data_items(TYPE_LOCATION)
+        if num_to_get != -1:
+            items = items[:num_to_get]
+        return [
+            i.item_id.hex() + ":" + str(i.unix_millis) + ":" + _b64.b64encode(i.ciphertext).decode("ascii")
+            for i in items
+        ]
+
+    def _decode_v2_blob(self, blob: str) -> tuple[bytes, int] | None:
+        """Parse an id:ts:ciphertext envelope produced by _get_locations_v2."""
+        parts = blob.split(":", 2)
+        if len(parts) != 3 or len(parts[0]) != 32:
+            return None
+        try:
+            return bytes.fromhex(parts[0]), int(parts[1])
+        except ValueError:
+            return None
+
     async def _request_v2(self, method: str, path: str, body: Any = None) -> Any:
         """JSON request against /api/v2 with bearer auth when logged in."""
         import aiohttp
