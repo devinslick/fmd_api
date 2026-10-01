@@ -23,7 +23,11 @@ def _validate_coordinate(value: object, name: str, limit: float) -> float:
 
 
 def _optional_float(data: Dict[str, JSONType], key: str) -> Optional[float]:
-    """Leniently coerce an optional numeric field; None if absent/invalid."""
+    """Leniently coerce an optional numeric field; None if absent/invalid.
+
+    Non-finite values are rejected for every field (NaN poisons
+    comparisons; infinity propagates downstream).
+    """
     value = data.get(key)
     if value is None:
         return None
@@ -32,6 +36,18 @@ def _optional_float(data: Dict[str, JSONType], key: str) -> Optional[float]:
     except (TypeError, ValueError):
         return None
     return result if math.isfinite(result) else None
+
+
+def _optional_non_negative_float(data: Dict[str, JSONType], key: str) -> Optional[float]:
+    """Like _optional_float but also rejecting negatives.
+
+    For radius-like quantities (accuracy): infinity would make every zone
+    match and a negative radius is meaningless.
+    """
+    result = _optional_float(data, key)
+    if result is None or result < 0:
+        return None
+    return result
 
 
 @dataclass
@@ -101,7 +117,7 @@ class Location:
             lat=lat,
             lon=lon,
             timestamp=ts,
-            accuracy_m=_optional_float(data, "accuracy"),
+            accuracy_m=_optional_non_negative_float(data, "accuracy"),
             altitude_m=_optional_float(data, "altitude"),
             speed_m_s=_optional_float(data, "speed"),
             heading_deg=_optional_float(data, "heading"),

@@ -229,7 +229,10 @@ class FmdClient(ApiV2Mixin):
         log.info("[1] Requesting salt (protocol v1)...")
         salt = await self._get_salt(fmd_id)
         log.info("[2] Hashing password with salt...")
-        password_hash = self._hash_password(password, salt)
+        # Argon2id (128 MiB) is CPU-heavy: run it in the executor so the
+        # event loop is never stalled during v1 login.
+        loop = asyncio.get_running_loop()
+        password_hash = await loop.run_in_executor(None, self._hash_password, password, salt)
         log.info("[3] Requesting access token...")
         self._fmd_id = fmd_id
         self._password = password
@@ -240,7 +243,9 @@ class FmdClient(ApiV2Mixin):
         log.info("[3a] Retrieving encrypted private key...")
         privkey_blob = await self._get_private_key_blob()
         log.info("[3b] Decrypting private key...")
-        privkey_bytes = self._decrypt_private_key_blob(privkey_blob, password)
+        privkey_bytes = await loop.run_in_executor(
+            None, self._decrypt_private_key_blob, privkey_blob, password
+        )
         self.private_key = self._load_private_key_from_bytes(privkey_bytes)
 
     def _hash_password(self, password: str, salt: str) -> str:

@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.1] - 2026-10-01
+
+### Fixed
+- Protocol-v1 `authenticate()` no longer stalls the event loop: both
+  Argon2id derivations on the v1 path (login password hash and the
+  private-key unwrap) now run in the default executor, matching the v2
+  login path (found by the Home Assistant requirements check).
+- `Location.accuracy_m` now rejects negative values in addition to
+  non-finite ones (accuracy is a radius downstream); `altitude_m`,
+  `speed_m_s`, and `heading_deg` keep the finite-only check so legitimate
+  negative altitudes and signed speeds survive.
+
 ## [3.1.0] - 2026-10-01
 
 ### Added

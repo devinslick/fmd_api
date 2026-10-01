@@ -146,3 +146,30 @@ def test_location_from_json_accepts_integer_coordinates() -> None:
     loc = Location.from_json({"lat": 41, "lon": -87})
     assert loc.lat == 41.0
     assert loc.lon == -87.0
+
+
+# --- Accuracy sign validation (3.1.1) ---
+
+
+def test_location_accuracy_rejects_negative_and_non_finite() -> None:
+    """Accuracy is a radius: negatives/inf/NaN become None."""
+    for bad in (-1, -0.1, math.inf, -math.inf, math.nan):
+        loc = Location.from_json({"lat": 1.0, "lon": 2.0, "accuracy": bad})
+        assert loc.accuracy_m is None, bad
+    loc = Location.from_json({"lat": 1.0, "lon": 2.0, "accuracy": 0})
+    assert loc.accuracy_m == 0.0
+
+
+def test_location_altitude_allows_negative() -> None:
+    """Altitude below sea level is legitimate and must survive."""
+    loc = Location.from_json({"lat": 1.0, "lon": 2.0, "altitude": -430.5})
+    assert loc.altitude_m == -430.5
+
+
+def test_location_speed_and_heading_still_lenient() -> None:
+    """Only finite check applies to speed/heading (signed/>360 kept)."""
+    loc = Location.from_json(
+        {"lat": 1.0, "lon": 2.0, "speed": -3.0, "heading": 400.0}
+    )
+    assert loc.speed_m_s == -3.0
+    assert loc.heading_deg == 400.0
