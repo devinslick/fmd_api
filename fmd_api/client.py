@@ -35,6 +35,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .helpers import _pad_base64
 from .types import JSONType, AuthArtifacts
+from .api_v2 import ApiV2Mixin
 from .exceptions import FmdApiException
 
 # Constants copied from original module to ensure parity
@@ -47,7 +48,7 @@ RSA_KEY_SIZE_BYTES = 384  # 3072 bits / 8
 log = logging.getLogger(__name__)
 
 
-class FmdClient:
+class FmdClient(ApiV2Mixin):
     def __init__(
         self,
         base_url: str,
