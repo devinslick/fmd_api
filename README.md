@@ -6,6 +6,12 @@
 
 Modern, async Python client for the open‑source FMD (Find My Device) server. It handles authentication, key management, encrypted data decryption, location/picture retrieval, and common device commands with safe, validated helpers.
 
+**Supports both FMD Server API v1 and API v2 / Protocol v2** (fmd-server >= 0.17.0). The client
+negotiates the account's protocol version automatically — v1 accounts and older servers keep
+working unchanged, while v2 accounts use the new Argon2id + HKDF + AES-GCM key schedule
+(end-to-end encryption with per-item data keys). New v2 accounts can be registered from the
+client via `register_v2()`.
+
 ## Install
 
 - Requires Python 3.8+

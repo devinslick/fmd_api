@@ -35,6 +35,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .helpers import _pad_base64
 from .types import JSONType, AuthArtifacts
+from .api_v2 import ApiV2Mixin
+from .protocol_v2 import TYPE_LOCATION, LongTermKeys
 from .exceptions import FmdApiException
 
 # Constants copied from original module to ensure parity
@@ -47,7 +49,7 @@ RSA_KEY_SIZE_BYTES = 384  # 3072 bits / 8
 log = logging.getLogger(__name__)
 
 
-class FmdClient:
+class FmdClient(ApiV2Mixin):
     def __init__(
         self,
         base_url: str,
@@ -216,7 +218,13 @@ class FmdClient:
             FmdApiException: If authentication fails or server returns an error.
             asyncio.TimeoutError: If the request times out.
         """
-        log.info("[1] Requesting salt...")
+        # Protocol negotiation: v2 accounts (fmd-server >= 0.17) use the
+        # new login; everything else stays on the v1 path.
+        proto = await self.negotiate_protocol(fmd_id)
+        if proto == 2:
+            await self.login_v2(fmd_id, password, session_duration)
+            return
+        log.info("[1] Requesting salt (protocol v1)...")
         salt = await self._get_salt(fmd_id)
         log.info("[2] Hashing password with salt...")
         password_hash = self._hash_password(password, salt)
@@ -328,6 +336,23 @@ class FmdClient:
 
     async def export_auth_artifacts(self) -> AuthArtifacts:
         """Export current authentication artifacts for password-free resume."""
+        if self._v2_session is not None:
+            return {
+                "base_url": self.base_url,
+                "fmd_id": self._fmd_id,
+                "access_token": self.access_token,
+                "private_key": "",
+                "password_hash": None,
+                "session_duration": self.session_duration,
+                "token_issued_at": self._token_issued_at,
+                "protocol_version": 2,
+                "master_key": base64.b64encode(
+                    self._v2_session.long_term_keys.master_key
+                ).decode("ascii"),
+                "auth_key": base64.b64encode(self._v2_session.auth_key).decode("ascii")
+                if self._v2_session.auth_key
+                else None,
+            }
         pk = self.private_key
         if pk is None:
             raise FmdApiException("Cannot export artifacts: private key not loaded")
@@ -376,6 +401,8 @@ class FmdClient:
         Raises:
             ValueError: If required artifact fields are missing or invalid.
         """
+        if artifacts.get("protocol_version") == 2:
+            return await cls._from_auth_artifacts_v2(artifacts)
         required = ["base_url", "fmd_id", "access_token", "private_key"]
         missing = [k for k in required if k not in artifacts]
         if missing:
@@ -415,6 +442,36 @@ class FmdClient:
             session_duration=session_dur,
         )
 
+    @classmethod
+    async def _from_auth_artifacts_v2(cls, artifacts: AuthArtifacts) -> "FmdClient":
+        """Resume a protocol-v2 session from stored master-key material."""
+        base_url = str(artifacts["base_url"])
+        fmd_id = str(artifacts["fmd_id"])
+        access_token = str(artifacts["access_token"])
+        master_key_b64 = artifacts.get("master_key")
+        if not master_key_b64:
+            raise ValueError("v2 artifacts require master_key")
+        master_key = base64.b64decode(master_key_b64 + "=" * (-len(master_key_b64) % 4))
+        auth_key_b64 = artifacts.get("auth_key")
+        auth_key = (
+            base64.b64decode(auth_key_b64 + "=" * (-len(auth_key_b64) % 4))
+            if auth_key_b64
+            else None
+        )
+        inst = cls(base_url)
+        inst._fmd_id = fmd_id
+        inst.protocol_version = 2
+        from .api_v2 import V2Session
+
+        inst.access_token = access_token
+        inst._v2_session = V2Session(
+            access_token=access_token,
+            long_term_keys=LongTermKeys(fmd_id, master_key),
+            token_issued_at=time.time(),
+            auth_key=auth_key,
+        )
+        return inst
+
     async def drop_password(self) -> None:
         """Forget raw password after onboarding (security hardening)."""
         self._password = None
@@ -437,7 +494,12 @@ class FmdClient:
     # -------------------------
     def decrypt_data_blob(self, data_b64: str) -> bytes:
         """
-        Decrypts a location or picture data blob using the instance's private key.
+        Decrypts a location or picture data blob.
+
+        Protocol v2 blobs (from get_locations on a v2 account) carry the
+        envelope "itemid-hex:unixmillis:base64-ciphertext" and are
+        decrypted with the session's long-term keys; v1 blobs fall
+        through to the RSA/AES path using the instance's private key.
 
         This method performs CPU-intensive RSA and AES operations synchronously.
         For async contexts (like Home Assistant), use decrypt_data_blob_async() instead
@@ -452,6 +514,15 @@ class FmdClient:
         Raises:
             FmdApiException: If private key not loaded, blob too small, or decryption fails.
         """
+        if self.protocol_version == 2 and self._v2_session is not None:
+            parsed = self._decode_v2_blob(data_b64)
+            if parsed is not None:
+                item_id, unix_millis = parsed
+                ct_b64 = data_b64.split(":", 2)[2]
+                ct = base64.b64decode(ct_b64 + "=" * (-len(ct_b64) % 4))
+                from .api_v2 import EncryptedItem
+
+                return self.decrypt_item(TYPE_LOCATION, EncryptedItem(item_id, unix_millis, ct))
         blob = base64.b64decode(_pad_base64(data_b64))
 
         # Check for minimum size (RSA packet + IV)
@@ -676,6 +747,8 @@ class FmdClient:
             asyncio.TimeoutError: If the request times out.
         """
         log.debug(f"Getting locations, num_to_get={num_to_get}, " f"skip_empty={skip_empty}")
+        if self.protocol_version == 2:
+            return await self._get_locations_v2(num_to_get)
         size_str = await self._make_api_request(
             "PUT", "/api/v1/locationDataSize", {"IDT": self.access_token, "Data": ""}
         )

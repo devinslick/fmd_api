@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-09-30
+
+### Added
+- **FMD Server API v2 + Protocol v2 support** (fmd-server >= 0.17.0), fully
+  backwards-compatible with API v1 servers and accounts:
+  - Protocol negotiation via the salt endpoint (`protoVersion`); v1 accounts
+    and pre-0.17.0 servers transparently stay on the v1 path.
+  - Protocol v2 crypto per the fmd-foss/server-protocol spec: Argon2id
+    (t=1, p=4, m=128 MiB) + HKDF-SHA256 key schedule, AES-GCM master-key
+    envelope, per-type KEKs and per-item DEKs with context-bound associated
+    data — mirroring the fmd-android reference implementation byte for byte.
+  - `register_v2()` — client-side registration of new protocol-v2 accounts.
+  - 401 re-authentication for v2 sessions using the stored `K_auth`
+    (`auth_key` artifact), so long-running clients survive token expiry.
+- `fmd_api.protocol_v2` module (key schedule, `LongTermKeys`) and
+  `fmd_api.api_v2` (`ApiV2Mixin`, `EncryptedItem`, `V2Session`).
+- `AuthArtifacts` gains `protocol_version`, `master_key` and `auth_key`
+  fields for password-free protocol-v2 session resumption.
+
+### Changed
+- `FmdClient.create()` / `authenticate()` negotiate the account's protocol
+  version first; `get_locations()` and `decrypt_data_blob()` dispatch on it.
+  The public method signatures and return shapes are unchanged.
+- `ApiV2Error` derives from `FmdApiException` so existing exception handling
+  (including Home Assistant coordinators) covers v2 transport errors.
+
+### Fixed
+- Empty-body 200 responses (e.g. `POST /data`) no longer raise JSON decode
+  errors in the v2 request helper.
+
+### Migration notes
+- No action needed for existing v1 accounts: they continue to work unchanged.
+- v2 accounts are only creatable on fmd-server >= 0.17.0 (via `register_v2`
+  or the FMD Android 0.17.0 app). Existing accounts migrate when upstream
+  ships the account-migration flow.
+
 ## [2.0.10] - 2026-09-25
 
 ### Added

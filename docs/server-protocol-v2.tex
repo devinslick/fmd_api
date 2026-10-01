@@ -1,0 +1,821 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[british]{babel}
+\usepackage[utf8]{inputenc}
+
+\usepackage{amsmath}
+\usepackage[
+    % n,
+    % advantage,
+    operators,
+    sets,
+    % adversary,
+    % landau,
+    probability,
+    % notions,
+    % logic,
+    % ff,
+    % mm,
+    % primitives,
+    % events,
+    % complexity,
+    % oracles,
+    % asymptotics,
+    % keys
+]{cryptocode}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{pdflscape}
+\usepackage{tabularx}
+\usepackage{tikz}
+
+\createprocedureblock{procb}{center,boxed}{}{}{}
+\usetikzlibrary{positioning}
+
+\newcommand{\FMDRegister}{\mathsf{FMD.Register}}
+\newcommand{\FMDLogin}{\mathsf{FMD.Login}}
+\newcommand{\FMDUploadData}{\mathsf{FMD.UploadData}}
+\newcommand{\FMDDownloadData}{\mathsf{FMD.DownloadData}}
+
+\newcommand{\AESGCMKeyGen}{\mathsf{AES\text{-}GCM.Keygen}}
+\newcommand{\AESGCMEnc}{\mathsf{AES\text{-}GCM.Enc}}
+\newcommand{\AESGCMDec}{\mathsf{AES\text{-}GCM.Dec}}
+\newcommand{\Argon}{\mathsf{Argon2id}}
+\newcommand{\HKDF}{\mathsf{HKDF}}
+\newcommand{\SHATwoFiveSix}{\mathsf{SHA2\text{-}256}}
+\newcommand{\SHAFiveTwelve}{\mathsf{SHA2\text{-}512}}
+
+\usepackage{titling}
+\setlength{\droptitle}{-5em} % reduce space above title
+
+\title{The FMD Server Protocol \\[1em] \includegraphics[scale=0.1]{logo.png}}
+\author{Thore Göbel}
+\date{Version 2.0 -- 2026-09-05}
+
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+
+\newpage
+
+\section{Overview}
+
+FMD (``Find My Device'', \href{https://fmd-foss.org/}{fmd-foss.org}) is a libre
+and open source system for remotely finding and controlling one's device.
+\\
+
+Users send \emph{commands} to their devices.
+For example, to locate the device by requesting its GPS coordinates (\texttt{fmd locate gps}),
+to let it ring (\texttt{fmd ring}), to lock it (\texttt{fmd lock <msg>}),
+or even to factory-reset it (\texttt{fmd delete <delete-pwd>}).
+Commands are strings and use a CLI-like format.
+
+Commands are sent over \emph{transport channels} (or \emph{transports} for short)
+to the FMD app running on their Android device.
+One basic transport channel is SMS.
+Users allow-list the phone numbers that may send commands.
+\\
+
+A more advanced transport channel is \emph{FMD Server}.
+Users register their devices with the server, and then use the web interface
+to send commands to their device.
+The web interface also shows the responses, such as a map with the locations
+returned by the device, and pictures taken by the device.
+
+Fundamentally, FMD Server is just a backend with a database and a REST API.
+Notably, it deals with sensitive data (device locations, pictures of the device's surroundings)
+and it exposes sensitive functionality (remotely controlling people's devices).
+Therefore, data protection and access control are crucial.
+
+FMD Server is self-hostable, which is the recommended option.
+Self-hosted instances may still be shared by multiple users
+(for example, a family admin running it for multiple people).
+The FMD project provides a hosted instance for users who don't have the means
+to self-host FMD Server. \footnote{\url{https://server.fmd-foss.org/}}
+In both cases, a natural goal for FMD Server is to prevent a rogue server administrator
+from controlling the devices of the users registered on the server.
+\\
+
+This whitepaper describes the threat model for FMD Server, its security goals,
+and the cryptographic protocol designed to achieve these goals.
+Together, they form the \emph{FMD Server Protocol}.
+
+
+\newpage
+
+\section{Threat model} \label{sec:threat-model}
+
+This section describes the threat model for the FMD Server Protocol.
+That is, how much power we grant the adversary.
+
+\paragraph{Assumption 1: Malicious backend}
+We assume that the host that runs the backend code is compromised.
+That is, the adversary can read and write the database,
+read and write all incoming and outgoing network requests, and change the backend code.
+
+This is motivated by shared hosting environments:
+users should be able to use an FMD Server instance hosted by people they don't trust.
+
+\paragraph{Assumption 2: Network adversary}
+Since the adversary has access to the server, they also have all properties of a Dolev-Yao adversary.
+That is, they can read, modify, reorder, replay, and drop messages sent over the network.
+
+\paragraph{Assumption 3: Secure client}
+We assume that the adversary cannot compromise the client code.
+That is, the client adheres to the protocol and does not reveal secrets to the adversary.
+\\
+
+For the Android app, this can be ensured by means of inspecting the source code,
+verifying signed build artifacts, and Reproducible Builds.
+
+For the web client, this is a huge, not currently realistic simplification.
+This is because the frontend web client is served by the same server that hosts the backend code.
+And that server we assumed above to be compromised!
+Unfortunately, this problem is inherent to the web as a platform.
+Therefore, we will set this problem aside.
+For example, one workaround would be to ship the web client as an Electron-based desktop app.
+\\
+
+Given FMD's use case of lost or stolen devices,
+the adversary may have physical access to the device.
+The secure client assumption means that the adversary cannot physically tamper
+with the device in a way that compromises the FMD client application.
+
+
+\newpage
+
+\section{Security goals}
+
+This section describes the security goals that the FMD Server Protocol (described
+in \autoref{sec:protocol}) aims to achieve.
+
+\paragraph{Goal 1: Confidentiality}
+The adversary does not learn sensitive data generated by an honest client,
+such as the content of locations and pictures.
+
+The adversary does not learn the arguments of the commands that are executed.
+For example, the adversary does not learn the content of the lockscreen message
+in the command \texttt{fmd lock "Please call me at +1 23 456"}.
+
+\paragraph{Goal 2: Integrity}
+All data that an honest client accepts has been previously generated by a honest client of the same account.
+The adversary cannot inject new data or swap data between accounts.
+This includes locations/pictures/etc. as well as commands.
+
+\paragraph{Goal 3: No replay}
+The adversary cannot replay a command to cause a client to execute a command more than once.
+
+
+\subsection{Non-goals}\label{sec:non-goals}
+
+The FMD Server Protocol is \emph{not} designed to protect against the scenarios listed below.
+These are explicitly out-of-scope.
+
+\paragraph{Non-goal 1: Command Type Confidentiality}
+The adversary is allowed to learn what types of command are executed (locate, picture, ...).
+This is necessary for commands that return data.
+The server needs to know the data type so that the web client can query a list of locations
+(as opposed to a list of pictures).
+
+\paragraph{Non-goal 2: Availability}
+We exclude availability and denial-of-service attacks.
+While service unavailability is extremely frustrating when users lose their device and need the service,
+a malicious server operator or on-path network adversary can always and trivially block users.
+Solving this would require peer-to-peer solutions; yet the design of FMD Server
+is intentionally ``centralised'' on a single, self-hostable instance.
+
+\paragraph{Non-goal 3: Data completeness}
+The server is allowed to remove data (locations, pictures, commands).
+A malicious server may use this to selectively hide data from a client.
+For example, it may only show a subset of locations or it may not deliver a command.
+
+The motivation for this is to enable the server to autonomously prune data
+(for example, to keep only the last 10 pictures),
+and to keep the protocol simple.
+We leave it to future work to include integrity protection for this in the protocol.
+
+
+
+
+\newpage
+
+\section{Protocol}\label{sec:protocol}
+
+This section describes the FMD Server Protocol.
+
+\subsection{Notation}
+
+In the protocol descriptions that follow, the following notations are used:
+
+\begin{itemize}
+    \item[$ || $] \quad bitstring concatenation
+    \item[$ \bin^{l} $] \quad set of bitstrings of length $l$
+    \item[$ v \sample S $] \quad value $v$ is sampled uniformly at random from set $S$
+    \item[$ v \gets e $] \quad value $v$ is assigned the result of expression $e$
+\end{itemize}
+
+\subsection{Participants}
+
+There are two protocol participants: the \textbf{client} $A$ (Android, web, etc.)
+and the \textbf{server} $S$ (backend).
+
+Where necessary, we distinguish between the \emph{device client}
+(that is \emph{receiving} commands and is uploading locations/pictures/etc)
+and the \emph{web client} (that is \emph{sending} commands and viewing uploaded data).
+
+\subsection{Fundamental concepts}
+
+First, we describe the fundamental concepts that are necessary to understand the design of the protocol.
+
+\paragraph{Protected data}
+There are different types of client-to-client data that require protection:
+
+\begin{itemize}
+    \item \emph{Commands:}
+        Uploaded by the web client to the FMD Server backend.
+        Retrieved by the device client (FMD Android) and executed.
+    \item \emph{Locations:}
+        Uploaded by the device client to FMD Server.
+        Retrieved and displayed by the web client.
+    \item \emph{Pictures:} Same as locations.
+    \item \emph{Free-text responses:}
+        \footnote{This is not yet implemented at the time of writing, but is documented here as a future feature.}
+        Uploaded by the device client to FMD Server
+        in response to running a command.
+        This can be a free-text result string or an error message.
+        This is the catch-all option for commands other than \texttt{locate} and \texttt{camera}.
+\end{itemize}
+
+In the future, there may be other device clients (desktop, CLI), but the ideas are the same.
+There may also be new types of structured data, but the ideas (key hierarchy, encryption algorithm)
+from locations/pictures extend to these other data types.
+
+\paragraph{Unprotected data}
+The following data is out-of-scope for the protocol:
+
+First, server-to-client data that the server generates and sends to the client.
+For example, when the server detects multiple failed login attempts
+it sends a warning to any logged-in client.
+Second, client-to-server data.
+For example, the client uploads a push URL, which the server uses to wake up the device
+using UnifiedPush\footnote{\url{https://unifiedpush.org/}}.
+
+This data is \emph{not} protected by the FMD Server Protocol;
+it solely relies on the protections provided by TLS.
+Only client-to-client data is covered by the protocol.
+
+\paragraph{Accounts}
+Each \emph{account} on FMD Server has a username and passphrase.
+The Android device client is used to register a new account.
+The web client can be used to log into an account.
+Every account has a \emph{username} $U$.
+\\
+
+There should only be a single device client for every account.
+Multi-device accounts are future work (see \autoref{sec:future-work}).
+\footnote{
+The Android client can be used to log into an existing account.
+It is the responsibility of the user to make sure that they don't log into the
+same account on multiple devices.
+
+If multiple Android devices are logged into the same account, the behaviour is undefined.
+For example, the push URL of all but the latest device will be dropped.
+Also, the user will not be able to distinguish from which device data is coming from.
+}
+
+\paragraph{Passphrase}
+The passphrase $P$ acts as the root of trust.
+The protections provided by the security protocol hinge on this passphrase.
+\textbf{If the adversary learns the passphrase, the protocol makes no security guarantees.}
+
+Therefore, the user needs to strike a balance between a passphrase
+that is strong enough against a brute-forcing adversary, and a passphrase that they can
+recover in the stressful situation of having lost their phone.
+For example, they may remember it, look it up in the password manager on their laptop,
+or have it on a piece of paper under their pillow.
+
+The motivation for using a passphrase is to allow for flexibility when the user loses their device.
+In such a situation, they need to be able to ask a friend -- or even a random stranger on the street -- for help.
+Users need to be able to access their FMD Server account via the web client from any browser.
+This would not always be possible with software passkeys or hardware security keys
+(for example, your bag was stolen, and the bag contained both your phone and your keyring with the hardware security key).
+
+
+\paragraph{User authentication}
+The user authenticates to the FMD Server backend to be allowed to make API requests to access an account.
+
+Note that malicious read/write access to an account is allowed by the threat model
+(because we assumed the server to be malicious).
+However, in practice, we clearly want the server to prevent random people
+on the internet from modifying account data.
+This includes data protected by the client-to-client protocol described in this paper,
+but also data that is client-to-server.
+For example, only an authenticated user should be able to change the push URL
+that FMD Server uses to wake up a device when a command is pending.
+
+
+\subsection{Passphrase hashing}\label{sec:passphrase-hashing}
+
+The client uses a password-based key derivation function to derive strong symmetric
+secrets from the likely human-chosen, low-entropy passphrase.
+
+\paragraph{Client-side hashing}
+Specifically, the client derives an initial \emph{password key} $K_{pwk}$ from the passphrase,
+as shown in \autoref{fig:passphrase-hashing}.
+It is used as the start of the key schedule (\autoref{sec:key-schedule}).
+It never leaves the client.
+
+As the password-based KDF, $\Argon$ is used with the parameters listed in \autoref{tab:argon-client}.
+These parameters were chosen using the considerations of section 4 of
+\href{https://datatracker.ietf.org/doc/html/rfc9106}{RFC 9106}.
+$m$ was chosen to account for the fact that the clients are mobile devices.
+In our testing, these values of $m$ still ran in reasonable time (under two seconds),
+whereas higher powers of 2 took significantly longer or caused out-of-memory (OOM)
+issues on older/lower-end Android devices.
+
+\begin{figure}[h]
+    \centering
+    \makebox[0cm][]{
+        \begin{tikzpicture}[thick]
+
+            \node (P) {``fmd\_v2\_password'' \concat\ $h(U)$ \concat\ passphrase $P$};
+
+            % hashing password key
+            \node[draw, dotted] (Argon) [below=of P] {$\Argon$};
+            \node (S) [left=of P] {salt $S$};
+            \node (PMK) [below=of Argon] {password key $K_{pwk}$};
+            \node (Argoninfo) [right=0.3cm of Argon] {};
+
+            \draw[-] (P) -- (Argon);
+            \draw[-] (S) -- node {} (Argon);
+            \draw[->] (Argon) -- node {} (PMK);
+
+        \end{tikzpicture}
+        }
+
+        \caption{Passphrase hashing (client-side)}
+        \label{fig:passphrase-hashing} % MUST come after \caption!
+    \end{figure}
+
+
+\paragraph{Server-side hashing}
+From $K_{pwk}$, the client derives a separate \emph{authentication key} $K_{auth}$ with $\HKDF$
+(see the key schedule in \autoref{sec:key-schedule}).
+The server receives $K_{auth}$ from the client.
+It treats this key as a password-like symmetric authentication token.
+The server hashes it again with $\SHAFiveTwelve$
+and compares the resulting hash $h(K_{auth})$ against the hash stored in the database.
+If they match, the user is authenticated.
+
+\begin{table}[]
+    \centering
+    \begin{tabular}{|l|l|l|}
+    \hline
+    Parameter & Value  & Description \\ \hline
+    $t$       & 1      & iterations\\
+    $p$       & 4      & lanes \\
+    $m$       & $2^{17}$ KiB = $128$ MiB & memory size \\
+              & 256 bit = 32 byte & hash length \\
+              & 128 bit = 16 byte & salt length \\ \hline
+    \end{tabular}
+
+    \caption{Argon2id parameters for client-side hashing}
+    \label{tab:argon-client} % MUST come after \caption!
+\end{table}
+
+
+
+\subsection{Key Schedule}\label{sec:key-schedule}
+
+\autoref{fig:key-schedule} and \autoref{fig:key-schedule-data} show
+the key schedule of how keys are derived.
+These figures are intended to be read together with the algorithms using these keys,
+described in \autoref{sec:subprotocols}.
+
+The key schedule is split into two halves.
+The top half derives an \emph{authentication key} $K_{auth}$
+and a \emph{pre-master key} $K_{pmk}$ from the user's passphrase.
+These change whenever the user decides to rotate their passphrase.
+
+The bottom half derives child keys from a \emph{master key} $K_{master}$.
+The master key is generated once during account creation, and afterwards never changes.
+
+The child keys act as key encryption keys (KEKs).
+There is one child key per data type: a location key $K_{loc}$, a picture key $K_{pic}$,
+a command key $K_{cmd}$, and so on.
+
+The individual data items are encrypted using unique, per-item data encryption keys (DEKs).
+These are freshly generated for every item, and are encrypted under their respective KEK.
+This is shown in \autoref{fig:key-schedule-data}.
+
+\begin{landscape}
+    % XXX: This also shifts the page number
+    \addtolength{\hoffset}{-2.5cm}
+    \addtolength{\voffset}{+1.75cm}
+
+    \begin{figure}
+        \centering
+        \small
+
+        \begin{center}
+        \begin{tikzpicture}[thick]
+            % passphrase to pre-master key
+            \node (P) {``fmd\_v2\_password'' \concat\ $h(U)$ \concat\ passphrase $P$};
+            \node (S) [left=of P] {salt $S$};
+            \node[draw, dotted] (Argon) [below=of P] {$\Argon$};
+            \node (PWK) [below=of Argon] {$K_{pwk}$};
+            \node (Argoninfo) [right=0.3cm of Argon] {};
+            \draw[-] (P) -- (Argon);
+            \draw[-] (S) -- node {} (Argon);
+            \draw[->] (Argon) -- node {} (PWK);
+
+            % authentication key
+            \node[draw, dotted] (KDFauk) [below left=2cm of PWK] {$\HKDF$};
+            \node (KDFaukinfo) [below left=2cm of PWK] [right=0.3cm of KDFauk] {salt=$\emptyset$, info=``fmd\_v2\_auth'' \concat\ $h(U)$};
+            \node (AUK) [below=2cm of KDFauk] {$K_{auth}$};
+            \draw[-] (PWK) -- (KDFauk);
+            \draw[->] (KDFauk) -- (AUK);
+
+            % pre-master key
+            \node[draw, dotted] (KDFpmk) [right=2cm of KDFaukinfo] {$\HKDF$};
+            \node (KDFpmkinfo) [right=0.3cm of KDFpmk] {salt=$\emptyset$, info=``fmd\_v2\_premaster'' \concat\ $h(U)$};
+            \node (PMK) [below=2cm of KDFpmk] {$K_{pmk}$};
+            \draw[-] (PWK) -- (KDFpmk);
+            \draw[->] (KDFpmk) -- (PMK);
+
+            % decrypting the master key
+            \node (IVmk) [right=of PMK] {$IV_{master}$};
+            \node (EMK) [right=of IVmk] {$C_{master}$};
+            \node[draw, dotted] (EMKdec) [below=of IVmk] {$\AESGCMDec$};
+            \node (EMKad) [right=0.3cm of EMKdec] {$AD=$ ``fmd\_v2\_master'' \concat\ $h(U)$};
+            \node (MK) [below=of EMKdec] {$K_{master}$};
+            \draw[-] (IVmk) -- (EMKdec);
+            \draw[-] (EMK) -- (EMKdec);
+            \draw[-] (PMK) -- (EMKdec);
+            \draw[->] (EMKdec) -- (MK);
+
+            % picture keys
+            \node[draw, dotted] (KDFpic) [below=2cm of MK] {$\HKDF$};
+            \node (KDFpicinfo) [right=0.3cm of KDFpic] {salt=$\emptyset$, info=``fmd\_v2\_kek\_picture'' \concat\ $h(U)$};
+            \node (PICK) [below=of KDFpic] {$K_{pic}$};
+            \draw[-] (MK) -- (KDFpic);
+            \draw[->] (KDFpic) -- (PICK);
+
+            % location keys
+            \node (KDFlocinfo) [left=of KDFpic] {salt=$\emptyset$, info=``fmd\_v2\_kek\_location'' \concat\ $h(U)$};
+            \node[draw, dotted] (KDFloc) [left=of KDFlocinfo] {$\HKDF$};
+            \node (Kloc) [below=of KDFloc] {$K_{loc}$};
+            \draw[-] (MK) -- (KDFloc);
+            \draw[->] (KDFloc) -- (Kloc);
+
+            % command keys
+            \node (KDFcmds) [right=of KDFpicinfo] {$\dots$};
+            \draw[-] (MK) -- (KDFcmds);
+
+        \end{tikzpicture}
+    \end{center}
+
+    \caption{Key Schedule (part 1)}
+    \label{fig:key-schedule} % MUST come after \caption!
+\end{figure}
+
+
+
+\begin{figure}
+    \centering
+
+    \begin{center}
+        \begin{tikzpicture}[thick]
+
+            % location keys
+            \node[draw, dotted] (AESKeyGen) {$\AESGCMKeyGen$};
+            \node (Kloci) [below=of AESKeyGen] {$K_{k_{id}}$};
+            \draw[->] (AESKeyGen) -- (Kloci);
+
+            % encrypt data key
+            \node[draw, dotted] (AESEncKey) [below left=4cm of Kloci] {$\AESGCMEnc$};
+            \node (IVkey) [above=of AESEncKey] {$IV_{k_{id}}$};
+            \node (Kloc) [left=0.5cm of IVkey] {$K_{loc}$};
+            \node (ADkey) [right=0.2cm of AESEncKey] {$AD = $ ``fmd\_v2\_dek\_location'' \concat\ $h(U)$ \concat\ $id$ \concat\ $t$};
+            \node (EncKey) [below=of AESEncKey] {encrypted location data key $C_{k_{id}}$};
+            \draw[-] (Kloc) -- (AESEncKey);
+            \draw[-] (IVkey) -- (AESEncKey);
+            \draw[-] (Kloci) -- (AESEncKey);
+            \draw[->] (AESEncKey) -- (EncKey);
+
+            % encrypt location data
+            \node[draw, dotted] (AESEncData) [right=0.1cm of ADkey] {$\AESGCMEnc$};
+            \node (IVdata) [above=of AESEncData] {$IV_{d_{id}}$};
+            \node (LOCI) [above right=of AESEncData] {$loc_{id}$};
+            \node (ADdata) [right=0.1cm of AESEncData] {$AD = $ ``fmd\_v2\_data\_location'' \concat\ $h(U)$ \concat\ $id$ \concat\ $t$};
+            \node (EncData) [below=of AESEncData] {encrypted location $C_{d_{id}}$};
+            \draw[-] (Kloci) -- (AESEncData);
+            \draw[-] (IVdata) -- (AESEncData);
+            \draw[-] (LOCI) -- (AESEncData);
+            \draw[->] (AESEncData) -- (EncData);
+
+        \end{tikzpicture}
+    \end{center}
+
+    \caption{Key Schedule (part 2)}
+    \label{fig:key-schedule-data} % MUST come after \caption!
+\end{figure}
+
+
+\end{landscape}
+
+
+
+
+\subsection{Subprotocols}\label{sec:subprotocols}
+
+This section describes the subprotocols of the FMD Server Protocol:
+$\FMDRegister$, $\FMDLogin$, $\FMDUploadData$, and $\FMDDownloadData$.
+
+\paragraph{Principles}
+The design is guided by the following principles:
+
+\begin{itemize}
+    \item Keep it simple.
+    \item Use modern algorithms.
+    \item Hardcode algorithms and their parameters.
+        If we need to switch algorithms, we will release a new protocol version.
+    \item Use context binding as much as possible to avoid confusions (in KDFs and AEAD Associated Data).
+\end{itemize}
+
+\paragraph{Encoding}
+Strings are \textbf{UTF-8} encoded.
+Integers are \textbf{big endian} encoded.
+
+Note: For simplicity, the encoding step is usually not shown.
+
+\paragraph{HKDF}
+All HKDF calls use $\SHATwoFiveSix$ as the hash function.
+
+\paragraph{Context strings}
+Context strings use the following format:
+
+$$ \text{``fmd\_v2\_''} \concat\ \kappa\ \concat\ \text{``\_''}\ \concat\ \tau\ \concat\ h(U)\ \concat\ id\ \concat\ t $$
+
+$\kappa$ is the type (\emph{kek}, \emph{dek}, \emph{data}) of content being derived or encrypted.
+$\tau$ is the type of user data.
+The username $U$ is hashed. $h$ is fixed to $\SHATwoFiveSix$.
+This is to normalise the username string to avoid attacks with maliciously chosen usernames.
+The $id$ must be a 128-bit bitstring generated freshly for every data item and uniformly at random.
+$t$ is a Unix milliseconds timestamp as a 64-bit integer.
+
+\paragraph{Types of data}
+For simplicity, the subprotocols are specified using $\tau$ as the parameter for the data type.
+At the time of writing, these are ``location'', ``picture'', ``text'', and ``command''.
+Where special handling is needed, this is noted.
+
+
+\subsubsection{Registration}
+
+The $\FMDRegister$ subprotocol (\autoref{alg:register}) is used to register a new account for user $U$ with the server.
+
+The client derives a pre-master key $K_{pmk}$ from the user's passphrase $P$.
+The client locally generates a master key $K_{master}$, symmetrically encrypts it under $K_{pmk}$,
+and uploads the result to the server.
+This allows passphrase rotation: when the user changes their passphrase,
+only the $K_{master}$ needs to be re-encrypted under the new $K_{pmk}'$ and re-uploaded.
+This avoids re-encrypting all stored data.
+
+
+\subsubsection{Login}
+
+The $\FMDLogin$ subprotocol (\autoref{alg:login}) is used by the client to log in, create a new session,
+and obtain the $K_{master}$.
+
+For the session, the server returns an $accessToken$ used to authorize subsequent requests
+that access that user's data.
+Since this is basic client-to-server access control,
+we omit the $accessToken$ in the other subprotocol descriptions.
+In practice, the client includes the $accessToken$ as an HTTP header field in subsequent requests.
+
+
+\subsubsection{Uploading data}
+
+The $\FMDUploadData$ subprotocol (\autoref{alg:upload-data}) is used by the client to upload new data to the server.
+
+Every datum is encrypted under a freshly generated \emph{data encryption key (DEK)}.
+The DEK is encrypted under a long-term \emph{key encryption key (KEK)}.
+Every data type has its own KEK.
+
+The plaintext of every data type internally uses its own structure.
+For example, the location may have fields for latitude, longitude, altitude, and so on.
+This structure is not relevant for the protocol, we generalise this as a data blob $D$.
+
+
+\subsubsection{Downloading data}
+
+The $\FMDDownloadData$ subprotocol (\autoref{alg:download-data}) is used by the client to download data from the server.
+
+We assume that the client knows which ids $id_i$ exist for any given data type $\tau$.
+In practice, the server provides an unauthenticated list of ids.
+This is in line with the non-goals described in \autoref{sec:non-goals}.
+
+Once decrypted, the client parses the data value $D$.
+For most types (location, picture, text), it simply displays the data to the user.
+For commands, there is additional handling:
+
+\paragraph{Command replay protection}
+To prevent replay attacks, the client stores the time $t'$.
+When a new command is downloaded, the client compares the new time $t$ against the stored $t'$.
+If and only if $t > t'$, the client executes the command, otherwise it rejects it.
+Because honest clients choose $t$ as a Unix millisecond timestamp, $t$ should be strictly increasing.
+
+If the client loses its storage (e.g., due to a reinstall), $t'$ is reset,
+making replay attacks possible.
+This risk is accepted, as device clients are assumed to have long-term storage.
+
+\begin{landscape}
+
+\begin{figure}
+    \procb{$\FMDRegister$}{
+        \textbf{Client} \> \> \textbf{Server} \\
+        \pcln \text{Knows: } U, P \> \> \\
+        \\
+        \pcln S \sample \bin ^s \pccomment{salt} \> \> \\
+        % \pccomment{Compute hashes} \\
+        \pcln K_{pwk} \gets \Argon (\text{``fmd\_v2\_password''} \concat\ h(U)\ \concat\ P, \; S) \> \> \\
+        \\
+        \pcln K_{auth} \gets \HKDF (K_{pwk}, \; salt=\emptyset, \; info = \text{``fmd\_v2\_auth''} \concat\  h(U) ) \> \> \\
+        \pcln K_{pmk} \gets \HKDF (K_{pwk}, \; salt=\emptyset, \; info = \text{``fmd\_v2\_premaster''} \concat\  h(U) ) \> \> \\
+        \\
+        \pcln IV_{master} \sample \bin^{96} \> \> \\
+        \pcln K_{master} \sample \bin^{256} \> \> \\
+        \pcln AD \gets \text{``fmd\_v2\_master''} \concat\ h(U) \> \> \\
+        \pcln C_{master} \gets \AESGCMEnc_{K_{pmk}} (IV_{master}, K_{master}, AD) \> \> \\
+        %
+        \pcln \> \sendmessageright*{U, S, IV_{master}, C_{master}, K_{auth}} \> \\
+        \pcln \> \> \pcif U \text{ exists}: \pcabort \\
+        \pcln \> \> hK_{auth} \gets \SHAFiveTwelve (K_{auth}) \\
+        \pcln \text{Store: } K_{master} \> \> \text{Store: } U, S, IV_{master}, C_{master}, hK_{auth}
+        % TODO: server-side hashing
+    }
+    \caption{$\FMDRegister$ algorithm}
+    \label{alg:register} % MUST come after \caption!
+\end{figure}
+
+\begin{figure}
+    \procb{$\FMDLogin$}{
+        \textbf{Client} \> \> \textbf{Server} \\
+        \pcln \text{Knows: } U, P \> \> \text{Knows: } U, S, IV_{master}, C_{master}, hK_{auth} \\
+        \\
+        \pcln \> \sendmessageright*{U} \> \\
+        \pcln \> \sendmessageleft*{S} \> \\
+        \pcln K_{pwk} \gets \Argon (\text{``fmd\_v2\_password''} \concat\ h(U)\ \concat\ P, \; S) \> \> \\
+        \pcln K_{auth} \gets \HKDF (K_{pwk}, \; salt=\emptyset, \; info = \text{``fmd\_v2\_auth''} \concat\  h(U) ) \> \> \\
+        \pcln \> \sendmessageright*{K_{auth}} \> \\
+        \> \> hK_{auth}' \gets \SHAFiveTwelve (K_{auth}) \\
+        \> \> \pcif hK_{auth}' \neq hK_{auth}: \pcabort \\
+        \\
+        \> \> accessToken \sample \bin^* \\
+        \pcln \> \sendmessageleft*{accessToken} \> \pccomment{authenticates subsequent requests} \\
+        \pcln \> \sendmessageleft*{IV_{master}, C_{master}} \> \\
+        \pcln K_{pmk} \gets \HKDF (K_{pwk}, \; salt=\emptyset, \; info = \text{``fmd\_v2\_premaster''} \concat\  h(U) ) \> \> \\
+        \pcln AD \gets \text{``fmd\_v2\_master''} \concat\ h(U) \> \> \\
+        \pcln K_{master} \gets \AESGCMDec_{K_{pmk}} (IV_{master}, C_{master}, AD) \> \> \\
+        \\
+        \pcln \text{Knows: } K_{master}, accessToken \> \>
+    }
+    \caption{$\FMDLogin$ algorithm}
+    \label{alg:login} % MUST come after \caption!
+\end{figure}
+
+\begin{figure}
+    \procb{$\FMDUploadData$}{
+        \textbf{Client} \> \> \textbf{Server} \\
+        \pcln \text{Knows: } U, K_{master} \> \> \text{Knows: } U \\
+        \\
+        \pcln D \gets \text{data value (location, picture, text, command)} \> \> \\
+        \pcln \tau \gets \text{data type} \> \> \\
+        \pcln id \sample \bin^{128} \> \> \\
+        \pcln t \gets \text{current Unix milliseconds} \> \> \\
+        \\
+        \pcln K_{\tau} \gets \HKDF (K_{master}, \; salt=\emptyset, \; info = \text{``fmd\_v2\_kek\_''} \concat\ \tau\ \concat\ h(U) \; ) \> \> \\
+        \pcln K_{k_{id}} \sample \bin^{256} \> \> \\
+        \\
+        \pcln IV_{k_{id}} \sample \bin^{96} \> \> \\
+        \pcln AD_{k_{id}} \gets \text{``fmd\_v2\_dek\_''} \concat\ \tau\ \concat\ h(U)\ \concat\ id\ \concat\ t \> \> \\
+        \pcln C_{k_{id}} \gets \AESGCMEnc_{K_{\tau}} (IV_{k_{id}}, K_{k_{id}}, AD_{k_{id}}) \qquad \pccomment{key encryption} \> \> \\
+        \\
+        \pcln IV_{d_{id}} \sample \bin^{96} \> \> \\
+        \pcln AD_{d_{id}} \gets \text{``fmd\_v2\_data\_''} \concat\ \tau\ \concat\ h(U)\ \concat\ id\ \concat\ t \> \> \\
+        \pcln C_{d_{id}} \gets \AESGCMEnc_{K_{k_{id}}} (IV_{d_{id}}, D, AD_{d_{id}}) \qquad \pccomment{data encryption} \> \> \\
+        \\
+        \pcln \> \sendmessageright*{ U, \tau, id, t, IV_{k_{id}}, C_{k_{id}}, IV_{d_{id}}, C_{d_{id}} } \> \\
+        \pcln \> \> \text{Stores: } \langle U, \tau, id, t, IV_{k_{id}}, C_{k_{id}}, IV_{d_{id}}, C_{d_{id}} \rangle
+        % \pcln \> \> \\
+    }
+    \caption{$\FMDUploadData$ algorithm}
+    \label{alg:upload-data} % MUST come after \caption!
+\end{figure}
+
+\begin{figure}
+    \procb{$\FMDDownloadData$}{
+        \textbf{Client} \> \> \textbf{Server} \\
+        \pcln \text{Knows: } U, K_{master}, t' \> \> \text{Knows: } \{ \langle U, \tau, id, t, IV_{k_{id}}, C_{k_{id}}, IV_{d_{id}}, C_{d_{id}} \rangle _i \}_i \\
+        \\
+        \pcln \tau \gets \text{data type} \> \> \\
+        \pcln K_{\tau} \gets \HKDF (K_{master}, \; salt=\emptyset, \; info = \text{``fmd\_v2\_kek\_''} \concat\ \tau\ \concat\ h(U) \; ) \> \> \\
+        \pcln \> \sendmessageright*{U, \tau} \> \\
+        %
+        \pcln \> \> \{id_i\}_i \gets \text{select all $id$ matching $U$ and $\tau$}\\
+        \pcln \> \sendmessageleft*{ \{id_i\}_i } \> \pccomment{server provides unauthenticated list of ids} \\
+        \pcln id \gets \text{select from } \{id_i\}_i \> \> \\
+        \pcln \> \sendmessageright*{U, \tau, id} \> \\
+        %
+        \pcln \> \sendmessageleft*{ t, IV_{k_{id}}, C_{k_{id}}, IV_{d_{id}}, C_{d_{id}} } \> \\
+        \\
+        \pcln AD_{k_{id}} \gets \text{``fmd\_v2\_dek\_''} \concat\ \tau\ \concat\ h(U)\ \concat\ id\ \concat\ t \> \> \\
+        \pcln K_{k_{id}} \gets \AESGCMDec_{K_{\tau}} (IV_{k_{id}}, C_{k_{id}}, AD_{k_{id}}) \qquad \pccomment{key decryption} \> \> \\
+        \\
+        \pcln AD_{d_{id}} \gets \text{``fmd\_v2\_data\_''} \concat\ \tau\ \concat\ h(U)\ \concat\ id\ \concat\ t \> \> \\
+        \pcln D \gets \AESGCMDec_{K_{k_{id}}} (IV_{d_{id}}, C_{d_{id}}, AD_{d_{id}}) \qquad \pccomment{data decryption} \> \> \\
+        \\
+        \pcln \pcif \tau = \text{``cmd''}: \> \> \\
+        \pcln \t \pcif t \leq t': \pcabort \> \> \\
+        \pcln \t \pcelse : t' \gets t \> \> \\
+        \pcln \text{Parse and handle } D \> \>
+        % \pcln \> \> \\
+    }
+    \caption{$\FMDDownloadData$ algorithm}
+    \label{alg:download-data} % MUST come after \caption!
+\end{figure}
+
+\end{landscape}
+
+
+
+\newpage
+
+\section{Future work}\label{sec:future-work}
+
+Below, we list ideas for future extensions of FMD Server.
+Especially the last two introduce significant complexity to the specification and an implementation,
+and are therefore out-of-scope of this protocol version.
+
+\paragraph{Authentication with an aPAKE}
+Instead of deriving a separate authentication key $K_{auth}$ to send to the server as
+the authentication value (see \autoref{sec:passphrase-hashing}),
+we might instead use an \emph{asymmetric/augmented password-authenticated key exchange (aPAKE)}
+for authenticating users.
+For example, 1Password\footnote{\url{https://agilebits.github.io/security-design/srp.html}}
+and Proton\footnote{\url{https://proton.me/blog/encrypted-email-authentication}} use SRP,
+and WhatsApp\footnote{\url{https://www.nccgroup.com/research-blog/public-report-whatsapp-opaque-ke-cryptographic-implementation-review/}}
+uses OPAQUE.
+
+\paragraph{Multi-device}
+The current protocol is designed with ``one device = one account'' in mind.
+A user who has multiple devices (phone, table, laptop) thus needs to register one account for each device.
+With multi-device, the user would register a single account to which they can connect multiple devices.
+
+\paragraph{Sharing data between accounts}
+Services comparable to FMD -- such as Apple Find My or Google Find Hub --
+allow users to share their location with friends and family.
+This feature needs asymmetric cryptography (with every account having an identity key pair)
+and logic to securely share data selectively between accounts.
+
+At this point, with these sharing capabilities, FMD Server would become
+an end-to-end-encrypted cloud storage (even more than it already is).
+Encrypted cloud storage is an active area of research\footnote{\url{https://eprint.iacr.org/2024/989}},
+with existing schemes often being broken.\footnote{\url{https://eprint.iacr.org/2022/959}, \url{https://eprint.iacr.org/2024/1616}}
+Therefore, any such extension requires careful design and formal analysis before deployment.
+
+
+% \newpage
+
+% \section{Conclusion}
+
+% TODO
+
+
+
+\newpage
+
+\appendix
+
+\begin{landscape}
+
+    \section{Version history}
+
+    \begin{tabularx}{\linewidth}{l|l|X|l|l}
+        Protocol version & Date published & Description & FMD Server version & REST API version \\
+        \hline
+        \hline
+        0.x & $\approx$ 2021 & Original protocol. Never formally specified. Broken in active adversary model. & 0.x & v1 \\
+        \hline
+        1.0 & -- & Skipped to align with REST API. & -- & -- \\
+        \hline
+        2.0 & 2026-09-05 & Initial stable, non-0.x version. & 0.17.0, 1.x & v2 \\
+    \end{tabularx}
+
+\end{landscape}
+
+\end{document}
