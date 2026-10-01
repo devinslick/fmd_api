@@ -977,7 +977,7 @@ class FmdClient(ApiV2Mixin):
                             decrypted_locations.append({"error": "invalid blob type", "index": i})
                             continue
                         try:
-                            decrypted = self.decrypt_data_blob(loc_blob)
+                            decrypted = await self.decrypt_data_blob_async(loc_blob)
                             loc_data = json.loads(decrypted)
                             decrypted_locations.append(loc_data)
                         except Exception as e:
@@ -994,7 +994,7 @@ class FmdClient(ApiV2Mixin):
                             picture_file_list.append({"index": i, "error": "invalid blob type"})
                             continue
                         try:
-                            decrypted = self.decrypt_data_blob(pic_blob)
+                            decrypted = await self.decrypt_data_blob_async(pic_blob)
                             # Pictures are double-encoded: decrypt -> base64 string -> image bytes
                             inner_b64 = decrypted.decode("utf-8").strip()
                             from .helpers import b64_decode_padded

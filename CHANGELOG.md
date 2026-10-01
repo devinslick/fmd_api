@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.2] - 2026-10-01
+
+### Fixed
+- All remaining synchronous decryption is now executor-offloaded:
+  `export_data_zip` (location and picture loops), `Device.refresh()`, and
+  `Device.decode_picture()` previously called the CPU-bound RSA/AES
+  `decrypt_data_blob` directly on the event loop; they now use
+  `decrypt_data_blob_async` like the rest of the client, so large history
+  exports or picture decoding no longer stall the loop.
+
 ## [3.1.1] - 2026-10-01
 
 ### Fixed

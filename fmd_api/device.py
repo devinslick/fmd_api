@@ -36,8 +36,8 @@ class Device:
             self.cached_location = None
             return
 
-        # decrypt and parse JSON
-        decrypted = self.client.decrypt_data_blob(blobs[0])
+        # decrypt and parse JSON (executor-offloaded; RSA/AES is CPU-heavy)
+        decrypted = await self.client.decrypt_data_blob_async(blobs[0])
         self.cached_location = Location.from_json(decrypted.decode("utf-8"))
 
     async def get_location(self, *, force: bool = False) -> Optional[Location]:
@@ -110,7 +110,8 @@ class Device:
 
     async def decode_picture(self, picture_blob_b64: str) -> PhotoResult:
         """Decrypt and decode a single picture blob into a PhotoResult."""
-        decrypted = self.client.decrypt_data_blob(picture_blob_b64)
+        # Executor-offloaded; RSA/AES decryption is CPU-heavy
+        decrypted = await self.client.decrypt_data_blob_async(picture_blob_b64)
         # decrypted is bytes, often containing a base64-encoded image (as text)
         try:
             inner_b64 = decrypted.decode("utf-8").strip()
