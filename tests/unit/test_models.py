@@ -1,4 +1,5 @@
 import json
+import math
 from datetime import timezone
 from typing import Dict, Any
 
@@ -77,3 +78,71 @@ def test_location_from_json_invalid_inputs() -> None:
 
     with pytest.raises(ValueError):
         Location.from_json({"lat": 1.0, "lon": 2.0, "date": "abc"})
+
+
+# --- Coordinate validation (3.1.0) ---
+
+
+def test_location_from_json_rejects_non_numeric_coordinates() -> None:
+    """String/None coordinates raise ValueError instead of flowing downstream."""
+    with pytest.raises(ValueError):
+        Location.from_json({"provider": "gps", "lat": "bad", "lon": "bad"})
+    with pytest.raises(ValueError):
+        Location.from_json({"provider": "gps", "lat": None, "lon": None})
+
+
+def test_location_from_json_rejects_out_of_range_coordinates() -> None:
+    with pytest.raises(ValueError):
+        Location.from_json({"lat": 91, "lon": 0})
+    with pytest.raises(ValueError):
+        Location.from_json({"lat": 0, "lon": -181})
+
+
+def test_location_from_json_rejects_non_finite_coordinates() -> None:
+    with pytest.raises(ValueError):
+        Location.from_json({"lat": float("inf"), "lon": 0})
+    with pytest.raises(ValueError):
+        Location.from_json({"lat": 0, "lon": math.nan})
+
+
+def test_location_from_json_rejects_bool_coordinates() -> None:
+    with pytest.raises(ValueError):
+        Location.from_json({"lat": True, "lon": False})
+
+
+def test_location_from_json_rejects_non_object_payload() -> None:
+    with pytest.raises(ValueError):
+        Location.from_json("[1, 2, 3]")
+    with pytest.raises(ValueError):
+        Location.from_json('"a string"')
+
+
+def test_location_from_json_lenient_optional_fields() -> None:
+    """Unusable optional values become None without discarding the fix."""
+    loc = Location.from_json(
+        {
+            "lat": 1.0,
+            "lon": 2.0,
+            "accuracy": "garbage",
+            "altitude": math.nan,
+            "speed": "fast",
+            "heading": None,
+            "bat": "not-a-number",
+            "provider": 7,
+        }
+    )
+    assert loc.lat == 1.0
+    assert loc.lon == 2.0
+    assert loc.accuracy_m is None
+    assert loc.altitude_m is None
+    testspeed = loc.speed_m_s
+    assert testspeed is None
+    assert loc.heading_deg is None
+    assert loc.battery_pct is None
+    assert loc.provider == "7"
+
+
+def test_location_from_json_accepts_integer_coordinates() -> None:
+    loc = Location.from_json({"lat": 41, "lon": -87})
+    assert loc.lat == 41.0
+    assert loc.lon == -87.0

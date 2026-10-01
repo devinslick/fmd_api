@@ -3,8 +3,11 @@ import base64
 
 import pytest
 from aioresponses import aioresponses
+from cryptography.exceptions import InvalidTag
 
 from fmd_api.client import FmdClient
+from fmd_api.exceptions import FmdApiException
+from unittest.mock import AsyncMock
 
 # NOTE: These tests validate behavior parity for the core HTTP flows using mocks.
 # They do not perform full Argon2/RSA cryptography verification, but they assert
@@ -1095,3 +1098,85 @@ async def test_server_error_retry_then_success(monkeypatch):
             assert slept["calls"] == [0.1]
         finally:
             await client.close()
+
+
+# --- get_latest_location (3.1.0) ---
+
+
+@pytest.mark.asyncio
+async def test_get_latest_location_skips_malformed_and_returns_valid() -> None:
+    """Corrupt/invalid blobs are skipped; the valid fix is returned."""
+    import json as _json
+
+    client = FmdClient.__new__(FmdClient)
+    good = {
+        "lat": 42.0,
+        "lon": -71.0,
+        "provider": "gps",
+        "bat": 80,
+        "accuracy": 5.0,
+    }
+    client.get_locations = AsyncMock(
+        return_value=["corrupt", "not-json-object", "good"]
+    )
+
+    async def fake_decrypt(blob: str) -> bytes:
+        if blob == "corrupt":
+            raise InvalidTag("tag mismatch")
+        if blob == "not-json-object":
+            return b'["not", "a", "dict"]'
+        return _json.dumps(good).encode()
+
+    client.decrypt_data_blob_async = AsyncMock(side_effect=fake_decrypt)
+
+    loc = await client.get_latest_location()
+    assert loc is not None
+    assert loc.lat == 42.0
+    assert loc.provider == "gps"
+
+
+@pytest.mark.asyncio
+async def test_get_latest_location_provider_filter() -> None:
+    """Beacondb fixes are skipped unless filter_inaccurate=False."""
+    import json as _json
+
+    client = FmdClient.__new__(FmdClient)
+    weak = {"lat": 1.0, "lon": 1.0, "provider": "beacondb"}
+    client.get_locations = AsyncMock(return_value=["weak"])
+
+    async def fake_decrypt(blob: str) -> bytes:
+        return _json.dumps(weak).encode()
+
+    client.decrypt_data_blob_async = AsyncMock(side_effect=fake_decrypt)
+
+    assert await client.get_latest_location() is None
+    loc = await client.get_latest_location(filter_inaccurate=False)
+    assert loc is not None
+    assert loc.provider == "beacondb"
+
+
+@pytest.mark.asyncio
+async def test_get_latest_location_all_malformed_returns_none() -> None:
+    client = FmdClient.__new__(FmdClient)
+    client.get_locations = AsyncMock(return_value=["corrupt"])
+    client.decrypt_data_blob_async = AsyncMock(
+        side_effect=FmdApiException("Blob too small")
+    )
+
+    assert await client.get_latest_location() is None
+
+
+@pytest.mark.asyncio
+async def test_get_latest_location_invalid_coordinates_returns_none() -> None:
+    """Location.from_json validation rejects string coordinates."""
+    import json as _json
+
+    client = FmdClient.__new__(FmdClient)
+    client.get_locations = AsyncMock(return_value=["bad"])
+    client.decrypt_data_blob_async = AsyncMock(
+        side_effect=lambda blob: _json.dumps(
+            {"lat": "bad", "lon": "bad", "provider": "gps"}
+        ).encode()
+    )
+
+    assert await client.get_latest_location() is None

@@ -1,6 +1,6 @@
 [project]
 name = "fmd_api"
-version = "3.0.1"
+version = "3.1.0"
 authors = [{name = "devinslick"}]
 description = "A Python client for the FMD (Find My Device) server API"
 readme = "README.md"

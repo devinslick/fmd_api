@@ -30,6 +30,7 @@ from argon2.low_level import hash_secret_raw, Type
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
@@ -38,6 +39,7 @@ from .types import JSONType, AuthArtifacts
 from .api_v2 import ApiV2Mixin
 from .protocol_v2 import TYPE_LOCATION, LongTermKeys
 from .exceptions import FmdApiException
+from .models import Location
 
 # Constants copied from original module to ensure parity
 CONTEXT_STRING_LOGIN = "context:loginAuthentication"
@@ -813,6 +815,57 @@ class FmdClient(ApiV2Mixin):
             log.warning(f"No valid locations found after checking " f"{min(max_attempts, size)} indices")
 
         return locations
+
+    async def get_latest_location(
+        self,
+        num_blobs: int = 5,
+        preferred_providers: Optional[List[str]] = None,
+        filter_inaccurate: bool = True,
+    ) -> Optional["Location"]:
+        """Fetch, decrypt, and validate the most recent usable location fix.
+
+        Scans the newest ``num_blobs`` location blobs, decrypting and parsing
+        each in an executor thread (CPU-heavy RSA/AES work never blocks the
+        event loop). Malformed blobs (undecryptable, invalid JSON, non-object
+        payloads, or invalid coordinates) are skipped so a single corrupt fix
+        can never discard valid ones in the scan window.
+
+        Args:
+            num_blobs: How many of the most recent blobs to scan.
+            preferred_providers: Provider names treated as accurate
+                (case-insensitive). Defaults to fused/gps/network.
+            filter_inaccurate: When False, provider filtering is disabled.
+
+        Returns:
+            A validated Location for the newest usable fix, or None if no
+            scanned blob yields one.
+
+        Raises:
+            FmdApiException: If fetching blobs from the server fails.
+        """
+        if preferred_providers is None:
+            preferred_providers = ["fused", "gps", "network"]
+        accurate = {p.lower() for p in preferred_providers}
+
+        blobs = await self.get_locations(num_to_get=num_blobs)
+        for blob in blobs:
+            if not blob or not isinstance(blob, str):
+                continue
+            try:
+                decrypted = await self.decrypt_data_blob_async(blob)
+                location = Location.from_json(decrypted.decode("utf-8"))
+            except (FmdApiException, InvalidTag, ValueError, TypeError):
+                log.debug("Skipping malformed location blob", exc_info=True)
+                continue
+            if (
+                filter_inaccurate
+                and location.provider
+                and location.provider.lower() not in accurate
+            ):
+                log.debug(f"Skipping inaccurate location (provider={location.provider})")
+                continue
+            return location
+        return None
 
     async def get_pictures(self, num_to_get: int = -1, timeout: Optional[float] = None) -> List[JSONType]:
         """

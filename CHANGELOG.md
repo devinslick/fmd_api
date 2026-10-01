@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.1.0] - 2026-10-01
+
+### Added
+- `FmdClient.get_latest_location()` — high-level helper that fetches the
+  most recent location blobs, decrypts each in an executor thread, and
+  returns a validated `Location` (or `None`). Malformed blobs
+  (undecryptable, invalid JSON, non-object payloads, invalid coordinates)
+  are skipped so a single corrupt fix can never discard valid ones; an
+  optional provider filter skips inaccurate fixes (defaults to
+  fused/gps/network).
+- `Location.from_json` now validates required coordinates strictly
+  (numeric, finite, within ±90/±180; bools and strings rejected) and
+  coerces optional numeric fields leniently (unusable values become
+  `None` instead of raising, preserving otherwise valid fixes).
+
 ## [3.0.1] - 2026-10-01
 
 ### Fixed
