@@ -15,7 +15,7 @@ import base64
 import json
 import time
 from dataclasses import dataclass
-from typing import Any, Final, Optional
+from typing import TYPE_CHECKING, Any, Final, Optional
 
 from .exceptions import AuthenticationError, FmdApiException
 from .protocol_v2 import (
@@ -67,10 +67,17 @@ def _pad_b64(s: str) -> str:
 class ApiV2Mixin:
     """Protocol-v2 methods mixed into FmdClient.
 
-    The host class must provide ``_make_api_request_v2`` (simple JSON
-    request helper with bearer auth) plus the v1 helpers it falls back
-    to. Kept as a mixin so the diff against the v1 client stays small.
+    The host class (FmdClient) provides the attributes declared here;
+    they are annotated so type checkers accept the mixin.
     """
+
+    if TYPE_CHECKING:
+        base_url: str
+        session_duration: int
+        _fmd_id: Optional[str]
+        _session: Optional[Any]
+
+        def _ensure_session(self) -> Any: ...
 
     # populated by FmdClient.__init__
     protocol_version: int = 1
@@ -182,7 +189,7 @@ class ApiV2Mixin:
                 "registrationToken": registration_token,
             },
         )
-        access_token = resp[_ACCESS_TOKEN_FIELD]
+        access_token = str(resp[_ACCESS_TOKEN_FIELD])
         self.protocol_version = 2
         self.access_token = access_token
         self._fmd_id = fmd_id

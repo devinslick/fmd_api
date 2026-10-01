@@ -35,8 +35,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .helpers import _pad_base64
 from .types import JSONType, AuthArtifacts
-from .api_v2 import ApiV2Mixin, TYPE_LOCATION
-from .protocol_v2 import LongTermKeys
+from .api_v2 import ApiV2Mixin
+from .protocol_v2 import TYPE_LOCATION, LongTermKeys
 from .exceptions import FmdApiException
 
 # Constants copied from original module to ensure parity
@@ -445,9 +445,9 @@ class FmdClient(ApiV2Mixin):
     @classmethod
     async def _from_auth_artifacts_v2(cls, artifacts: AuthArtifacts) -> "FmdClient":
         """Resume a protocol-v2 session from stored master-key material."""
-        base_url = artifacts["base_url"]
-        fmd_id = artifacts["fmd_id"]
-        access_token = artifacts["access_token"]
+        base_url = str(artifacts["base_url"])
+        fmd_id = str(artifacts["fmd_id"])
+        access_token = str(artifacts["access_token"])
         master_key_b64 = artifacts.get("master_key")
         if not master_key_b64:
             raise ValueError("v2 artifacts require master_key")
