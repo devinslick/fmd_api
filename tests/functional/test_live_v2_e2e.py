@@ -3,6 +3,11 @@
 Full chain: register_v2 -> post_data_items(location) -> (fresh client)
 login_v2 -> get_data_items -> decrypt_item -> JSON parse.
 
+DESTRUCTIVE live test: registers/uses/deletes accounts on a REAL server.
+Never collected by pytest (manual script). The scratch account and
+password below are ephemeral test fixtures - change BASE/ACCOUNT before
+running against any server you care about.
+
 Run:  .venv-api/bin/python tests/functional/test_live_v2_e2e.py
 """
 
@@ -86,6 +91,17 @@ async def main() -> None:
         print("\nEND-TO-END v2: PASS")
     finally:
         await client2.close()
+
+    # --- 5. clean up the scratch account ---
+    client3 = FmdClient(BASE)
+    try:
+        await client3.login_v2(ACCOUNT, PASSWORD, 3600)
+        await client3._request_v2("DELETE", "/account")
+        print("[8] scratch account deleted (cleanup)")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[8] cleanup skipped: {exc}")
+    finally:
+        await client3.close()
 
 
 if __name__ == "__main__":
