@@ -36,8 +36,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from .helpers import _pad_base64
 from .types import JSONType, AuthArtifacts
-from .api_v2 import ApiV2Mixin
-from .protocol_v2 import TYPE_LOCATION, LongTermKeys
+from .api_v2 import ApiV2Error, ApiV2Mixin
+from .protocol_v2 import TYPE_COMMAND, TYPE_LOCATION, LongTermKeys
 from .exceptions import FmdApiException
 from .models import Location
 
@@ -1060,9 +1060,13 @@ class FmdClient(ApiV2Mixin):
     # -------------------------
     async def send_command(self, command: str) -> bool:
         """
-        Sends a signed command to the device via the server.
+        Sends a command to the device via the server.
 
-        Commands are signed with RSA-PSS using the client's private key.
+        Protocol v2 accounts have no RSA keypair; their commands are
+        encrypted with the command-type KEK (derived from the account
+        master key) and uploaded as data items via POST /api/v2/data/command
+        (mirroring fmd-android's FmdServerApiV2Repository). Protocol v1
+        accounts keep the RSA-PSS signed POST /api/v1/command path.
 
         Args:
             command: The command string to send (e.g., "ring", "lock", "locate").
@@ -1071,17 +1075,30 @@ class FmdClient(ApiV2Mixin):
             True if the command was sent successfully.
 
         Raises:
-            FmdApiException: If private key not loaded or command fails.
+            FmdApiException: If not authenticated (no usable key material) or the
+                command fails.
             aiohttp.ClientError: If a network error occurs.
             asyncio.TimeoutError: If the request times out.
         """
         log.info(f"Sending command to device: {command}")
+        if self.protocol_version == 2 and self._v2_session is not None:
+            try:
+                await self.post_data_items(TYPE_COMMAND, [command.encode("utf-8")])
+            except ApiV2Error as e:
+                log.error(f"Failed to send command '{command}': {e}")
+                raise FmdApiException(f"Failed to send command '{command}': {e}") from e
+            log.info(f"Command sent successfully: {command}")
+            return True
+
         unix_time_ms = int(time.time() * 1000)
         message_to_sign = f"{unix_time_ms}:{command}"
         message_bytes = message_to_sign.encode("utf-8")
         key = self.private_key
         if key is None:
-            raise FmdApiException("Private key not loaded. Call authenticate() first.")
+            raise FmdApiException(
+                "Private key not loaded. Call authenticate() first, or log in with a "
+                "protocol-v2 account to send commands via the v2 command channel."
+            )
         signature = key.sign(
             message_bytes, padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length=32), hashes.SHA256()
         )

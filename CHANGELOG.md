@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.0] - 2026-10-07
+
+### Fixed
+- `send_command` (and all command helpers: `request_location`,
+  `take_picture`, `set_bluetooth`, `set_do_not_disturb`, `set_ringer_mode`,
+  `Device.play_sound`, `Device.lock`, `Device.wipe`) now work on
+  protocol-v2 accounts. Previously they raised
+  "Private key not loaded. Call authenticate() first." on any v2
+  account, because v2 accounts have no RSA keypair. Commands are now
+  encrypted with the command-type KEK and uploaded via
+  `POST /api/v2/data/command`, mirroring fmd-android's
+  `FmdServerApiV2Repository`. Protocol-v1 accounts keep the RSA-PSS
+  signed `/api/v1/command` path unchanged.
+
 ## [3.1.4] - 2026-10-01
 
 ### Added
