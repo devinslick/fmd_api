@@ -80,8 +80,8 @@ async def test_resume_with_der_key():
 
 @pytest.mark.asyncio
 async def test_401_without_password_or_hash():
-    """Test 401 response when neither password nor hash available raises error."""
-    from fmd_api.exceptions import FmdApiException
+    """Test 401 response when neither password nor hash available raises AuthenticationError."""
+    from fmd_api.exceptions import AuthenticationError
 
     client = FmdClient("https://fmd.example.com")
     client.access_token = "old_token"
@@ -95,7 +95,7 @@ async def test_401_without_password_or_hash():
         m.put("https://fmd.example.com/api/v1/locationDataSize", status=401)
 
         try:
-            with pytest.raises(FmdApiException, match="401"):
+            with pytest.raises(AuthenticationError, match="401"):
                 await client.get_locations()
         finally:
             await client.close()

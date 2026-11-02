@@ -731,9 +731,10 @@ async def test_authenticate_error_handling():
         m.put("https://fmd.example.com/api/v1/salt", status=401)
 
         try:
-            from fmd_api.exceptions import FmdApiException
+            from fmd_api.exceptions import AuthenticationError
 
-            with pytest.raises(FmdApiException, match="API request failed for /api/v1/salt"):
+            # 401 on the salt request is a typed auth error since 3.2.2.
+            with pytest.raises(AuthenticationError, match="401"):
                 await client.authenticate("bad_id", "bad_password", session_duration=3600)
         finally:
             await client.close()

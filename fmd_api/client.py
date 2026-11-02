@@ -38,7 +38,7 @@ from .helpers import _pad_base64
 from .types import JSONType, AuthArtifacts
 from .api_v2 import ApiV2Error, ApiV2Mixin
 from .protocol_v2 import TYPE_COMMAND, TYPE_LOCATION, LongTermKeys
-from .exceptions import FmdApiException
+from .exceptions import AuthenticationError, FmdApiException
 from .models import Location
 
 # Constants copied from original module to ensure parity
@@ -246,7 +246,8 @@ class FmdClient(ApiV2Mixin):
         privkey_bytes = await loop.run_in_executor(
             None, self._decrypt_private_key_blob, privkey_blob, password
         )
-        self.private_key = self._load_private_key_from_bytes(privkey_bytes)
+        # RSA key parsing is CPU work: keep it off the event loop.
+        self.private_key = await loop.run_in_executor(None, self._load_private_key_from_bytes, privkey_bytes)
 
     def _hash_password(self, password: str, salt: str) -> str:
         salt_bytes = base64.b64decode(_pad_base64(salt))
@@ -272,11 +273,16 @@ class FmdClient(ApiV2Mixin):
             "Data": password_hash,
             "SessionDurationSeconds": session_duration,
         }
-        return cast(str, await self._make_api_request("PUT", "/api/v1/requestAccess", payload))
+        return cast(
+            str, await self._make_api_request("PUT", "/api/v1/requestAccess", payload, retry_auth=False)
+        )
 
     async def _get_private_key_blob(self) -> str:
         return cast(
-            str, await self._make_api_request("PUT", "/api/v1/key", {"IDT": self.access_token, "Data": "unused"})
+            str,
+            await self._make_api_request(
+                "PUT", "/api/v1/key", {"IDT": self.access_token, "Data": "unused"}, retry_auth=False
+            ),
         )
 
     def _decrypt_private_key_blob(self, key_b64: str, password: str) -> bytes:
@@ -335,11 +341,33 @@ class FmdClient(ApiV2Mixin):
             pk_bytes = private_key_bytes.encode("utf-8")
         else:
             pk_bytes = private_key_bytes
-        try:
-            inst.private_key = cast(RSAPrivateKey, serialization.load_pem_private_key(pk_bytes, password=None))
-        except ValueError:
-            inst.private_key = cast(RSAPrivateKey, serialization.load_der_private_key(pk_bytes, password=None))
+        # RSA key parsing is CPU work: keep it off the event loop.
+        loop = asyncio.get_running_loop()
+        inst.private_key = await loop.run_in_executor(None, inst._load_private_key_from_bytes, pk_bytes)
         return inst
+
+    def _export_private_key_pem(self) -> str:
+        """Serialize the private key to PEM. CPU work; call via executor."""
+        pk = self.private_key
+        if pk is None:
+            raise FmdApiException("Cannot export artifacts: private key not loaded")
+        try:
+            return pk.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            ).decode("utf-8")
+        except Exception:
+            # Test fallback: if the private_key is a test double without private_bytes,
+            # generate a temporary RSA key solely for serialization so artifacts are usable.
+            # Real clients always have a cryptography RSAPrivateKey here.
+            log.warning("Private key object lacks export support; generating temporary key for artifacts export.")
+            temp_key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+            return temp_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.PKCS8,
+                encryption_algorithm=serialization.NoEncryption(),
+            ).decode("utf-8")
 
     async def export_auth_artifacts(self) -> AuthArtifacts:
         """Export current authentication artifacts for password-free resume."""
@@ -363,23 +391,10 @@ class FmdClient(ApiV2Mixin):
         pk = self.private_key
         if pk is None:
             raise FmdApiException("Cannot export artifacts: private key not loaded")
-        try:
-            pem = pk.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption(),
-            ).decode("utf-8")
-        except Exception:
-            # Test fallback: if the private_key is a test double without private_bytes,
-            # generate a temporary RSA key solely for serialization so artifacts are usable.
-            # Real clients always have a cryptography RSAPrivateKey here.
-            log.warning("Private key object lacks export support; generating temporary key for artifacts export.")
-            temp_key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
-            pem = temp_key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption(),
-            ).decode("utf-8")
+        # Key serialization (and the fallback keygen) is CPU work: keep it
+        # off the event loop.
+        loop = asyncio.get_running_loop()
+        pem = await loop.run_in_executor(None, self._export_private_key_pem)
         return {
             "base_url": self.base_url,
             "fmd_id": self._fmd_id,
@@ -639,7 +654,17 @@ class FmdClient(ApiV2Mixin):
                             )
                         else:
                             log.warning("401 received: no password or hash available for reauth")
-                            resp.raise_for_status()
+                            raise AuthenticationError(
+                                "401 received but no credentials available for re-auth"
+                            )
+                    if resp.status == 401:
+                        # Re-auth disabled (token requests, retry after re-auth):
+                        # surface a typed auth error instead of recursing.
+                        raise AuthenticationError("401 Unauthorized (v1)")
+                    if resp.status == 403:
+                        # Rejected credentials / access denied: must be an auth
+                        # error, not a generic request failure.
+                        raise AuthenticationError("Access denied (403)")
 
                     # Rate limit handling (429)
                     if resp.status == 429:

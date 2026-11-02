@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.2] - 2026-11-02
+
+### Fixed
+- Protocol-v1 rejected credentials now raise `AuthenticationError`:
+  HTTP 403 (wrong password / access denied) and HTTP 401 that cannot be
+  recovered (token requests with re-auth disabled, or no stored
+  credentials) surface as typed auth errors instead of generic
+  `FmdApiException` — Home Assistant now shows `invalid_auth` instead of
+  `cannot_connect`, and the coordinator's auth-failure handling engages.
+- Token requests (`/api/v1/requestAccess`, `/api/v1/key`) no longer
+  recurse into `authenticate()` on HTTP 401: re-auth is disabled for the
+  requests that acquire credentials themselves.
+- RSA private-key load/serialize work is executor-offloaded everywhere it
+  runs inside async paths (`authenticate`, `resume`,
+  `export_auth_artifacts`), matching the Argon2id offload pattern; the
+  event loop no longer blocks during setup, resume, or artifact export.
+
 ## [3.2.1] - 2026-11-02
 
 ### Fixed
