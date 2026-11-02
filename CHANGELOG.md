@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.2.1] - 2026-11-02
+
+### Fixed
+- `_request_v2` now raises `AuthenticationError` on HTTP 401 (rejected
+  logins, rejected re-logins, expired sessions). A function-local
+  `from .exceptions import AuthenticationError` inside the 403 branch made
+  the name function-scoped, so the 401 branch raised `UnboundLocalError`
+  whenever the 403 branch had not executed first — surfacing as `unknown`
+  errors in Home Assistant's config flow and bypassing the coordinator's
+  authentication-failure handling. The redundant local import is removed;
+  the module-level import is the only binding. Regression tests cover
+  401-without-session, 401-after-failed-relogin, 401-relogin-recovery,
+  and the 403 path.
+
 ## [3.2.0] - 2026-10-07
 
 ### Fixed

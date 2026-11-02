@@ -314,8 +314,6 @@ class ApiV2Mixin:
                         )
                     raise AuthenticationError("401 Unauthorized (v2)")
                 if resp.status == 403:
-                    from .exceptions import AuthenticationError
-
                     raise AuthenticationError("Access denied (403)")
                 if resp.status == 404:
                     raise ApiV2Error("404 Not Found")
